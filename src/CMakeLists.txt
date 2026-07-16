@@ -5,17 +5,20 @@ set(OFFSCREEN_APP_SRCS
   app/browser_app.h
   app/browser_window_title.cpp
   app/browser_window_title.h
+  app/diagnostic_log.h
   app/main.cpp
   browser/browser_close_state.cpp
   browser/browser_close_state.h
+  browser/browser_frame.cpp
+  browser/browser_frame.h
   browser/browser_client.cpp
   browser/browser_client.h
   browser/browser_geometry.cpp
   browser/browser_geometry.h
   browser/browser_service.cpp
   browser/browser_service.h
-  browser/minimal_render_handler.cpp
-  browser/minimal_render_handler.h
+  browser/osr_render_handler.cpp
+  browser/osr_render_handler.h
   qt/browser_widget.cpp
   qt/browser_widget.h
 )
@@ -23,6 +26,7 @@ set(OFFSCREEN_APP_SRCS
 set(OFFSCREEN_SUBPROCESS_SRCS
   app/browser_app.cpp
   app/browser_app.h
+  app/diagnostic_log.h
   subprocess/subprocess_main.cpp
 )
 
@@ -31,6 +35,7 @@ SET_EXECUTABLE_TARGET_PROPERTIES(offscreen_cef_browser)
 target_include_directories(offscreen_cef_browser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(offscreen_cef_browser
   PRIVATE
+    offscreen_core
     Qt5::Widgets
     libcef_lib
     libcef_dll_wrapper

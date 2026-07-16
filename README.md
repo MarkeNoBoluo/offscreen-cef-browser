@@ -28,6 +28,8 @@
 | 输入法 | 中文输入需要纳入首版验收，Qt `QInputMethodEvent` 要转发到 CEF IME API。 |
 | 版本路线 | V1 仅要求 Windows x64（`windows64`/`win64`）+ Qt 5.14.2 MSVC2017 64bit 可构建、可运行、可部署；V2 再根据情况评估 Qt 6.9.3、`win32` 和 `linux-amd64`。 |
 
+## 构建
+	PowerShell -ExecutionPolicy Bypass -File "scripts\build.ps1"
 ## 文档索引
 
 - [docs/README.md](docs/README.md)：文档总览与阅读顺序。

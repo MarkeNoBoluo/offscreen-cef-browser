@@ -2,7 +2,6 @@
 
 #include <string>
 
-#include "browser/minimal_render_handler.h"
 #include "include/cef_client.h"
 #include "include/cef_display_handler.h"
 #include "include/cef_life_span_handler.h"
@@ -32,7 +31,7 @@ class BrowserClient final : public CefClient,
   };
 
   BrowserClient(Delegate* delegate,
-                CefRefPtr<MinimalRenderHandler> render_handler);
+                CefRefPtr<CefRenderHandler> render_handler);
 
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override;
   CefRefPtr<CefLoadHandler> GetLoadHandler() override;
@@ -59,7 +58,7 @@ class BrowserClient final : public CefClient,
 
  private:
   Delegate* delegate_ = nullptr;
-  CefRefPtr<MinimalRenderHandler> render_handler_;
+  CefRefPtr<CefRenderHandler> render_handler_;
 
   IMPLEMENT_REFCOUNTING(BrowserClient);
 };

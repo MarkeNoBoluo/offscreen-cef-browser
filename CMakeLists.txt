@@ -37,9 +37,16 @@ add_library(offscreen_core STATIC
   src/browser/browser_close_state.h
   src/browser/browser_geometry.cpp
   src/browser/browser_geometry.h
+  src/browser/browser_paint_geometry.cpp
+  src/browser/browser_paint_geometry.h
 )
 target_include_directories(offscreen_core PUBLIC src)
 target_compile_features(offscreen_core PUBLIC cxx_std_17)
+target_compile_definitions(offscreen_core PRIVATE
+  NOMINMAX
+  WIN32_LEAN_AND_MEAN
+  $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+)
 
 if(OFFSCREEN_BUILD_TESTS)
   enable_testing()
@@ -49,33 +56,65 @@ if(OFFSCREEN_BUILD_TESTS)
   )
   target_link_libraries(app_config_tests PRIVATE offscreen_core)
   target_compile_features(app_config_tests PRIVATE cxx_std_17)
+  target_compile_definitions(app_config_tests PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+  )
 
   add_executable(browser_geometry_tests
     tests/browser_geometry_tests.cpp
   )
   target_link_libraries(browser_geometry_tests PRIVATE offscreen_core)
   target_compile_features(browser_geometry_tests PRIVATE cxx_std_17)
+  target_compile_definitions(browser_geometry_tests PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+  )
 
   add_executable(browser_close_state_tests
     tests/browser_close_state_tests.cpp
   )
   target_link_libraries(browser_close_state_tests PRIVATE offscreen_core)
   target_compile_features(browser_close_state_tests PRIVATE cxx_std_17)
+  target_compile_definitions(browser_close_state_tests PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+  )
 
   add_executable(browser_window_title_tests
     tests/browser_window_title_tests.cpp
   )
   target_link_libraries(browser_window_title_tests PRIVATE offscreen_core)
   target_compile_features(browser_window_title_tests PRIVATE cxx_std_17)
+  target_compile_definitions(browser_window_title_tests PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+  )
+
+  add_executable(browser_paint_geometry_tests
+    tests/browser_paint_geometry_tests.cpp
+  )
+  target_link_libraries(browser_paint_geometry_tests PRIVATE offscreen_core)
+  target_compile_features(browser_paint_geometry_tests PRIVATE cxx_std_17)
+  target_compile_definitions(browser_paint_geometry_tests PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+  )
 
   add_custom_target(offscreen_core_tests
-    DEPENDS app_config_tests browser_geometry_tests browser_close_state_tests browser_window_title_tests
+    DEPENDS app_config_tests browser_geometry_tests browser_close_state_tests browser_window_title_tests browser_paint_geometry_tests
   )
 
   add_test(NAME app_config_tests COMMAND app_config_tests)
   add_test(NAME browser_geometry_tests COMMAND browser_geometry_tests)
   add_test(NAME browser_close_state_tests COMMAND browser_close_state_tests)
   add_test(NAME browser_window_title_tests COMMAND browser_window_title_tests)
+  add_test(NAME browser_paint_geometry_tests COMMAND browser_paint_geometry_tests)
 endif()
 
 if(OFFSCREEN_BUILD_APP)
