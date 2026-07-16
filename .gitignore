@@ -1,0 +1,9 @@
+build/
+build-review*/
+dist/
+.codex/
+.superpowers/
+.vs/
+*.user
+*.log
+third_party/cef/
