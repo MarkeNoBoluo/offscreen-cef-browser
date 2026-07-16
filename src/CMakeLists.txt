@@ -3,7 +3,21 @@ set(OFFSCREEN_APP_SRCS
   app/app_config.h
   app/browser_app.cpp
   app/browser_app.h
+  app/browser_window_title.cpp
+  app/browser_window_title.h
   app/main.cpp
+  browser/browser_close_state.cpp
+  browser/browser_close_state.h
+  browser/browser_client.cpp
+  browser/browser_client.h
+  browser/browser_geometry.cpp
+  browser/browser_geometry.h
+  browser/browser_service.cpp
+  browser/browser_service.h
+  browser/minimal_render_handler.cpp
+  browser/minimal_render_handler.h
+  qt/browser_widget.cpp
+  qt/browser_widget.h
 )
 
 set(OFFSCREEN_SUBPROCESS_SRCS
@@ -28,6 +42,10 @@ target_compile_definitions(offscreen_cef_browser PRIVATE
   WIN32_LEAN_AND_MEAN
   $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
 )
+target_link_options(offscreen_cef_browser PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/MANIFEST:EMBED>
+  $<$<CXX_COMPILER_ID:MSVC>:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/windows_compatibility.manifest>
+)
 
 add_executable(offscreen_cef_subprocess ${OFFSCREEN_SUBPROCESS_SRCS})
 SET_EXECUTABLE_TARGET_PROPERTIES(offscreen_cef_subprocess)
@@ -43,6 +61,10 @@ target_compile_definitions(offscreen_cef_subprocess PRIVATE
   NOMINMAX
   WIN32_LEAN_AND_MEAN
   $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+)
+target_link_options(offscreen_cef_subprocess PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/MANIFEST:EMBED>
+  $<$<CXX_COMPILER_ID:MSVC>:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/windows_compatibility.manifest>
 )
 
 add_dependencies(offscreen_cef_browser libcef_dll_wrapper offscreen_cef_subprocess)

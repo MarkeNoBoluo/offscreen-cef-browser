@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <limits>
+#include <memory>
 
 #include <QApplication>
+#include <QCloseEvent>
 #include <QDir>
 #include <QMainWindow>
 #include <QObject>
@@ -12,7 +14,10 @@
 
 #include "app/app_config.h"
 #include "app/browser_app.h"
+#include "app/browser_window_title.h"
+#include "browser/browser_service.h"
 #include "include/cef_app.h"
+#include "qt/browser_widget.h"
 
 namespace {
 
@@ -28,6 +33,24 @@ void AssignCefString(cef_string_t* cef_string, const QString& value) {
   cef_string_set(reinterpret_cast<const cef_char_t*>(value.utf16()),
                  static_cast<size_t>(value.size()), cef_string, true);
 }
+
+class BrowserMainWindow final : public QMainWindow {
+ public:
+  explicit BrowserMainWindow(offscreen::BrowserService* browser_service)
+      : browser_service_(browser_service) {}
+
+ protected:
+  void closeEvent(QCloseEvent* event) override {
+    if (browser_service_ && !browser_service_->TryCloseBrowser()) {
+      event->ignore();
+      return;
+    }
+    QMainWindow::closeEvent(event);
+  }
+
+ private:
+  offscreen::BrowserService* browser_service_ = nullptr;
+};
 
 }  // namespace
 
@@ -74,12 +97,37 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  QMainWindow main_window;
+  offscreen::BrowserService browser_service;
+  BrowserMainWindow main_window(&browser_service);
   main_window.setWindowTitle(
       QStringLiteral("Offscreen CEF Browser - %1")
           .arg(StringToQString(app_config.initial_url)));
+
+  auto browser_widget = std::make_unique<offscreen::BrowserWidget>();
+  offscreen::BrowserWidget* browser_widget_ptr = browser_widget.get();
+  main_window.setCentralWidget(browser_widget.release());
+
+  browser_widget_ptr->SetResizeCallback(
+      [&browser_service](offscreen::BrowserViewRect view_rect) {
+        browser_service.Resize(view_rect);
+      });
+  browser_service.SetBrowserClosedCallback([&main_window]() {
+    QTimer::singleShot(0, &main_window, [&main_window]() { main_window.close(); });
+  });
+
   main_window.resize(1024, 768);
   main_window.show();
+
+  QTimer::singleShot(0, &main_window, [&browser_service, browser_widget_ptr,
+                                       &main_window,
+                                       initial_url = app_config.initial_url]() {
+    if (!browser_service.CreateBrowser(browser_widget_ptr->NativeParentHandle(),
+                                       browser_widget_ptr->CurrentViewRect(),
+                                       initial_url)) {
+      main_window.setWindowTitle(StringToQString(
+          offscreen::BrowserCreationFailedTitle(browser_service.last_error())));
+    }
+  });
 
   const int result = qt_app.exec();
 

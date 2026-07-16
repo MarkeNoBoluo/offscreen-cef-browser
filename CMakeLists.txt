@@ -31,6 +31,12 @@ set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "Supported configuratio
 add_library(offscreen_core STATIC
   src/app/app_config.cpp
   src/app/app_config.h
+  src/app/browser_window_title.cpp
+  src/app/browser_window_title.h
+  src/browser/browser_close_state.cpp
+  src/browser/browser_close_state.h
+  src/browser/browser_geometry.cpp
+  src/browser/browser_geometry.h
 )
 target_include_directories(offscreen_core PUBLIC src)
 target_compile_features(offscreen_core PUBLIC cxx_std_17)
@@ -38,13 +44,38 @@ target_compile_features(offscreen_core PUBLIC cxx_std_17)
 if(OFFSCREEN_BUILD_TESTS)
   enable_testing()
 
-  add_executable(offscreen_core_tests
+  add_executable(app_config_tests
     tests/app_config_tests.cpp
   )
-  target_link_libraries(offscreen_core_tests PRIVATE offscreen_core)
-  target_compile_features(offscreen_core_tests PRIVATE cxx_std_17)
+  target_link_libraries(app_config_tests PRIVATE offscreen_core)
+  target_compile_features(app_config_tests PRIVATE cxx_std_17)
 
-  add_test(NAME offscreen_core_tests COMMAND offscreen_core_tests)
+  add_executable(browser_geometry_tests
+    tests/browser_geometry_tests.cpp
+  )
+  target_link_libraries(browser_geometry_tests PRIVATE offscreen_core)
+  target_compile_features(browser_geometry_tests PRIVATE cxx_std_17)
+
+  add_executable(browser_close_state_tests
+    tests/browser_close_state_tests.cpp
+  )
+  target_link_libraries(browser_close_state_tests PRIVATE offscreen_core)
+  target_compile_features(browser_close_state_tests PRIVATE cxx_std_17)
+
+  add_executable(browser_window_title_tests
+    tests/browser_window_title_tests.cpp
+  )
+  target_link_libraries(browser_window_title_tests PRIVATE offscreen_core)
+  target_compile_features(browser_window_title_tests PRIVATE cxx_std_17)
+
+  add_custom_target(offscreen_core_tests
+    DEPENDS app_config_tests browser_geometry_tests browser_close_state_tests browser_window_title_tests
+  )
+
+  add_test(NAME app_config_tests COMMAND app_config_tests)
+  add_test(NAME browser_geometry_tests COMMAND browser_geometry_tests)
+  add_test(NAME browser_close_state_tests COMMAND browser_close_state_tests)
+  add_test(NAME browser_window_title_tests COMMAND browser_window_title_tests)
 endif()
 
 if(OFFSCREEN_BUILD_APP)

@@ -21,7 +21,7 @@ void test_uses_default_url_when_argument_is_missing() {
 
   const offscreen::AppConfig config = offscreen::AppConfig::FromArgs(1, argv);
 
-  expect_eq(config.initial_url, "https://example.com/", "initial_url");
+  expect_eq(config.initial_url, "https://baidu.com/", "initial_url");
 }
 
 void test_uses_url_argument_when_present() {
@@ -37,7 +37,7 @@ void test_ignores_empty_url_argument() {
 
   const offscreen::AppConfig config = offscreen::AppConfig::FromArgs(2, argv);
 
-  expect_eq(config.initial_url, "https://example.com/", "initial_url");
+  expect_eq(config.initial_url, "https://baidu.com/", "initial_url");
 }
 
 }  // namespace
