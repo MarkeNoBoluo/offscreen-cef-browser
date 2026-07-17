@@ -1,3 +1,5 @@
+set(CMAKE_AUTOMOC ON)
+
 set(OFFSCREEN_APP_SRCS
   app/app_config.cpp
   app/app_config.h
@@ -21,6 +23,8 @@ set(OFFSCREEN_APP_SRCS
   browser/browser_service.h
   browser/osr_render_handler.cpp
   browser/osr_render_handler.h
+  browser/tab_manager.cpp
+  browser/tab_manager.h
   qt/browser_widget.cpp
   qt/browser_widget.h
 )

@@ -131,15 +131,10 @@ BrowserWidget::BrowserWidget(QWidget* parent) : QWidget(parent) {
   setFocusPolicy(Qt::StrongFocus);
   setMouseTracking(true);
   setAutoFillBackground(false);
-  QCoreApplication::instance()->installNativeEventFilter(this);
   DiagnosticLog("BrowserWidget constructed");
 }
 
-BrowserWidget::~BrowserWidget() {
-  if (QCoreApplication::instance()) {
-    QCoreApplication::instance()->removeNativeEventFilter(this);
-  }
-}
+BrowserWidget::~BrowserWidget() = default;
 
 HWND BrowserWidget::NativeParentHandle() const {
   const HWND handle = reinterpret_cast<HWND>(winId());
@@ -303,53 +298,6 @@ void BrowserWidget::SetCefCursor(int cursor_type, HCURSOR cursor_handle) {
       setCursor(Qt::ArrowCursor);
       break;
   }
-}
-
-bool BrowserWidget::nativeEventFilter(const QByteArray& event_type,
-                                      void* message,
-                                      long* result) {
-  (void)event_type;
-  MSG* windows_message = static_cast<MSG*>(message);
-  if (!windows_message) {
-    return false;
-  }
-
-  switch (windows_message->message) {
-    case WM_INPUTLANGCHANGE:
-    case WM_IME_SETCONTEXT:
-    case WM_IME_STARTCOMPOSITION:
-    case WM_IME_COMPOSITION:
-    case WM_IME_ENDCOMPOSITION:
-    case WM_IME_CHAR:
-      break;
-    default:
-      return false;
-  }
-
-  const HWND widget_handle = reinterpret_cast<HWND>(winId());
-  const QWidget* top_level_widget = window();
-  const HWND top_level_handle =
-      top_level_widget ? reinterpret_cast<HWND>(top_level_widget->winId())
-                       : nullptr;
-  const bool is_browser_window =
-      windows_message->hwnd == widget_handle ||
-      windows_message->hwnd == top_level_handle;
-
-  DiagnosticLog("BrowserWidget::nativeEventFilter message=" +
-                HexValue(static_cast<uintptr_t>(windows_message->message)) +
-                " hwnd=" +
-                HexValue(reinterpret_cast<uintptr_t>(windows_message->hwnd)) +
-                " widget_hwnd=" +
-                HexValue(reinterpret_cast<uintptr_t>(widget_handle)) +
-                " top_hwnd=" +
-                HexValue(reinterpret_cast<uintptr_t>(top_level_handle)) +
-                " matched=" +
-                std::string(is_browser_window ? "true" : "false"));
-  if (!is_browser_window) {
-    return false;
-  }
-
-  return HandleImeNativeMessage(windows_message, result);
 }
 
 bool BrowserWidget::HandleImeNativeMessage(MSG* windows_message,

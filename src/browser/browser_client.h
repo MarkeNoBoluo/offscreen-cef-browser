@@ -29,6 +29,7 @@ class BrowserClient final : public CefClient,
     virtual void OnLoadStateChanged(bool is_loading,
                                     bool can_go_back,
                                     bool can_go_forward) = 0;
+    virtual void OnAddressChanged(const std::string& url) = 0;
     virtual void OnTitleChanged(const std::string& title) = 0;
     virtual void OnLoadErrorText(const std::string& error_text) = 0;
     virtual void OnRenderProcessTerminated() = 0;
@@ -36,6 +37,7 @@ class BrowserClient final : public CefClient,
                                  CefCursorHandle cursor_handle) = 0;
     virtual void OnTakeFocusRequest(bool next) = 0;
     virtual void OnSetFocusRequest() = 0;
+    virtual void OnPopupRequest(const std::string& url) = 0;
   };
 
   BrowserClient(Delegate* delegate,
@@ -63,6 +65,9 @@ class BrowserClient final : public CefClient,
                    const CefString& failedUrl) override;
   void OnTitleChange(CefRefPtr<CefBrowser> browser,
                      const CefString& title) override;
+  void OnAddressChange(CefRefPtr<CefBrowser> browser,
+                       CefRefPtr<CefFrame> frame,
+                       const CefString& url) override;
   void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
                                  TerminationStatus status) override;
   bool OnCursorChange(CefRefPtr<CefBrowser> browser,
@@ -79,6 +84,27 @@ class BrowserClient final : public CefClient,
   void OnTakeFocus(CefRefPtr<CefBrowser> browser, bool next) override;
   bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
   void OnGotFocus(CefRefPtr<CefBrowser> browser) override;
+
+  // CefLifeSpanHandler:
+  bool OnBeforePopup(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefFrame> frame,
+                     const CefString& target_url,
+                     const CefString& target_frame_name,
+                     CefLifeSpanHandler::WindowOpenDisposition target_disposition,
+                     bool user_gesture,
+                     const CefPopupFeatures& popupFeatures,
+                     CefWindowInfo& windowInfo,
+                     CefRefPtr<CefClient>& client,
+                     CefBrowserSettings& settings,
+                     CefRefPtr<CefDictionaryValue>& extra_info,
+                     bool* no_javascript_access) override;
+
+  // CefRequestHandler:
+  bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefFrame> frame,
+                        const CefString& target_url,
+                        CefRequestHandler::WindowOpenDisposition target_disposition,
+                        bool user_gesture) override;
 
  private:
   Delegate* delegate_ = nullptr;

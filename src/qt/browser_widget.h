@@ -4,12 +4,12 @@
 #include <memory>
 #include <vector>
 
-#include <QAbstractNativeEventFilter>
 #include <QWidget>
 #include <windows.h>
 
 #include "browser/browser_geometry.h"
 #include "browser/browser_paint_geometry.h"
+#include "browser/tab_manager.h"
 #include "include/cef_render_handler.h"
 
 namespace offscreen {
@@ -18,7 +18,8 @@ class BrowserFrame;
 class BrowserImeHandler;
 class BrowserService;
 
-class BrowserWidget final : public QWidget, public QAbstractNativeEventFilter {
+class BrowserWidget final : public QWidget {
+  Q_OBJECT
  public:
   using ResizeCallback =
       std::function<void(BrowserViewRect, double device_scale_factor)>;
@@ -38,9 +39,13 @@ class BrowserWidget final : public QWidget, public QAbstractNativeEventFilter {
                                     const std::vector<CefRect>& bounds);
   void SetCefCursor(int cursor_type, HCURSOR cursor_handle);
 
+  // IME native message handler -- public for TabManager global dispatch
+  bool HandleImeNativeMessage(MSG* windows_message, long* result);
+
+  void SetTabId(TabManager::TabId id) { tab_id_ = id; }
+  TabManager::TabId tab_id() const { return tab_id_; }
+
  protected:
-  bool nativeEventFilter(const QByteArray& event_type, void* message,
-                         long* result) override;
   void resizeEvent(QResizeEvent* event) override;
   void paintEvent(QPaintEvent* event) override;
 
@@ -57,13 +62,13 @@ class BrowserWidget final : public QWidget, public QAbstractNativeEventFilter {
   void focusOutEvent(QFocusEvent* event) override;
 
  private:
-  bool HandleImeNativeMessage(MSG* windows_message, long* result);
   void HandleImeCompositionMessage(WPARAM wParam, LPARAM lParam);
 
   ResizeCallback resize_callback_;
   std::shared_ptr<BrowserFrame> frame_;
   BrowserService* browser_service_ = nullptr;
   BrowserImeHandler* ime_handler_ = nullptr;
+  TabManager::TabId tab_id_ = TabManager::kInvalidTabId;
   bool is_composing_ = false;
   QPoint last_mouse_pos_;
 };

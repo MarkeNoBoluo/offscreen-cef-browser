@@ -90,6 +90,8 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
     DiagnosticLog(stream.str());
   }
 
+  address_ = initial_url;
+
   CefWindowInfo window_info;
   window_info.SetAsWindowless(parent_handle);
 
@@ -117,6 +119,21 @@ void BrowserService::SetImeCompositionRangeChangedCallback(
   }
 }
 
+void BrowserService::SetPopupRequestCallback(PopupRequestCallback callback) {
+  DiagnosticLog("BrowserService::SetPopupRequestCallback");
+  popup_request_callback_ = std::move(callback);
+}
+
+void BrowserService::SetAddressChangeCallback(AddressChangeCallback callback) {
+  DiagnosticLog("BrowserService::SetAddressChangeCallback");
+  address_change_callback_ = std::move(callback);
+}
+
+void BrowserService::SetTitleChangeCallback(TitleChangeCallback callback) {
+  DiagnosticLog("BrowserService::SetTitleChangeCallback");
+  title_change_callback_ = std::move(callback);
+}
+
 void BrowserService::Resize(BrowserViewRect view_rect,
                              double device_scale_factor) {
   static std::atomic<int> resize_count{0};
@@ -140,6 +157,10 @@ void BrowserService::Resize(BrowserViewRect view_rect,
 void BrowserService::Navigate(const std::string& url) {
   DiagnosticLog("BrowserService::Navigate url=[" + url +
                 "] has_browser=" + (browser_ ? "true" : "false"));
+  address_ = url;
+  if (address_change_callback_) {
+    address_change_callback_(address_);
+  }
   if (browser_ && browser_->GetMainFrame()) {
     browser_->GetMainFrame()->LoadURL(url);
   }
@@ -194,6 +215,10 @@ bool BrowserService::is_closing() const {
 
 std::string BrowserService::title() const {
   return title_;
+}
+
+std::string BrowserService::address() const {
+  return address_;
 }
 
 std::string BrowserService::last_error() const {
@@ -419,9 +444,20 @@ void BrowserService::OnLoadStateChanged(bool is_loading,
   can_go_forward_ = can_go_forward;
 }
 
+void BrowserService::OnAddressChanged(const std::string& url) {
+  DiagnosticLog("BrowserService::OnAddressChanged url=[" + url + "]");
+  address_ = url;
+  if (address_change_callback_) {
+    address_change_callback_(url);
+  }
+}
+
 void BrowserService::OnTitleChanged(const std::string& title) {
   DiagnosticLog("BrowserService::OnTitleChanged title=[" + title + "]");
   title_ = title;
+  if (title_change_callback_) {
+    title_change_callback_(title);
+  }
 }
 
 void BrowserService::OnLoadErrorText(const std::string& error_text) {
@@ -450,6 +486,13 @@ void BrowserService::OnTakeFocusRequest(bool next) {
 
 void BrowserService::OnSetFocusRequest() {
   DiagnosticLog("BrowserService::OnSetFocusRequest");
+}
+
+void BrowserService::OnPopupRequest(const std::string& url) {
+  DiagnosticLog("BrowserService::OnPopupRequest url=[" + url + "]");
+  if (popup_request_callback_) {
+    popup_request_callback_(url);
+  }
 }
 
 void BrowserService::ImeSetComposition(

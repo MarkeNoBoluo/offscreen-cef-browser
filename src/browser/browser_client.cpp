@@ -122,6 +122,20 @@ void BrowserClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
   }
 }
 
+void BrowserClient::OnAddressChange(CefRefPtr<CefBrowser> browser,
+                                    CefRefPtr<CefFrame> frame,
+                                    const CefString& url) {
+  if (!frame || !frame->IsMain()) {
+    return;
+  }
+  DiagnosticLog("BrowserClient::OnAddressChange browser_id=" +
+                std::to_string(browser ? browser->GetIdentifier() : -1) +
+                " url=[" + CefStringToUtf8(url) + "]");
+  if (delegate_) {
+    delegate_->OnAddressChanged(CefStringToUtf8(url));
+  }
+}
+
 void BrowserClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
                                               TerminationStatus status) {
   DiagnosticLog("BrowserClient::OnRenderProcessTerminated browser_id=" +
@@ -208,6 +222,52 @@ bool BrowserClient::OnSetFocus(CefRefPtr<CefBrowser> browser,
 void BrowserClient::OnGotFocus(CefRefPtr<CefBrowser> browser) {
   DiagnosticLog("BrowserClient::OnGotFocus browser_id=" +
                 std::to_string(browser ? browser->GetIdentifier() : -1));
+}
+
+bool BrowserClient::OnBeforePopup(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    const CefString& target_url,
+    const CefString& target_frame_name,
+    CefLifeSpanHandler::WindowOpenDisposition target_disposition,
+    bool user_gesture,
+    const CefPopupFeatures& popupFeatures,
+    CefWindowInfo& windowInfo,
+    CefRefPtr<CefClient>& client,
+    CefBrowserSettings& settings,
+    CefRefPtr<CefDictionaryValue>& extra_info,
+    bool* no_javascript_access) {
+  std::string url = target_url.ToString();
+  DiagnosticLog("BrowserClient::OnBeforePopup browser_id=" +
+                std::to_string(browser ? browser->GetIdentifier() : -1) +
+                " url=[" + url + "]");
+  if (url.empty()) {
+    url = "about:blank";
+  }
+  if (delegate_) {
+    delegate_->OnPopupRequest(url);
+  }
+  return true;
+}
+
+bool BrowserClient::OnOpenURLFromTab(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    const CefString& target_url,
+    CefRequestHandler::WindowOpenDisposition target_disposition,
+    bool user_gesture) {
+  std::string url = target_url.ToString();
+  DiagnosticLog("BrowserClient::OnOpenURLFromTab browser_id=" +
+                std::to_string(browser ? browser->GetIdentifier() : -1) +
+                " url=[" + url + "] disposition=" +
+                std::to_string(static_cast<int>(target_disposition)));
+  if (url.empty()) {
+    url = "about:blank";
+  }
+  if (delegate_) {
+    delegate_->OnPopupRequest(url);
+  }
+  return true;
 }
 
 }  // namespace offscreen

@@ -25,6 +25,9 @@ class BrowserService final : public BrowserClient::Delegate {
       std::function<void(int cursor_type, CefCursorHandle cursor_handle)>;
   using ImeCompositionRangeChangedCallback =
       std::function<void(const CefRange&, const std::vector<CefRect>&)>;
+  using PopupRequestCallback = std::function<void(const std::string& url)>;
+  using AddressChangeCallback = std::function<void(const std::string& url)>;
+  using TitleChangeCallback = std::function<void(const std::string& title)>;
 
   BrowserService();
   ~BrowserService() override;
@@ -38,6 +41,9 @@ class BrowserService final : public BrowserClient::Delegate {
   void SetCursorChangeCallback(CursorChangeCallback callback);
   void SetImeCompositionRangeChangedCallback(
       ImeCompositionRangeChangedCallback callback);
+  void SetPopupRequestCallback(PopupRequestCallback callback);
+  void SetAddressChangeCallback(AddressChangeCallback callback);
+  void SetTitleChangeCallback(TitleChangeCallback callback);
   void Resize(BrowserViewRect view_rect, double device_scale_factor);
   void Navigate(const std::string& url);
   void Reload();
@@ -47,6 +53,7 @@ class BrowserService final : public BrowserClient::Delegate {
   bool has_browser() const;
   bool is_closing() const;
   std::string title() const;
+  std::string address() const;
   std::string last_error() const;
   std::shared_ptr<BrowserFrame> frame() const;
 
@@ -90,12 +97,14 @@ class BrowserService final : public BrowserClient::Delegate {
   void OnLoadStateChanged(bool is_loading,
                           bool can_go_back,
                           bool can_go_forward) override;
+  void OnAddressChanged(const std::string& url) override;
   void OnTitleChanged(const std::string& title) override;
   void OnLoadErrorText(const std::string& error_text) override;
   void OnRenderProcessTerminated() override;
   void OnCursorChanged(int cursor_type, CefCursorHandle cursor_handle) override;
   void OnTakeFocusRequest(bool next) override;
   void OnSetFocusRequest() override;
+  void OnPopupRequest(const std::string& url) override;
 
  private:
   CefRefPtr<CefBrowser> browser_;
@@ -111,6 +120,10 @@ class BrowserService final : public BrowserClient::Delegate {
   bool can_go_back_ = false;
   bool can_go_forward_ = false;
   BrowserClosedCallback browser_closed_callback_;
+  PopupRequestCallback popup_request_callback_;
+  AddressChangeCallback address_change_callback_;
+  TitleChangeCallback title_change_callback_;
+  std::string address_;
   std::string title_;
   std::string last_error_;
 };

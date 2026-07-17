@@ -31,7 +31,9 @@ void BrowserApp::OnBeforeCommandLineProcessing(
   }
 
   command_line->AppendSwitch("use-alloy-style");
-  DiagnosticLog("BrowserApp appended switch: use-alloy-style");
+  command_line->AppendSwitch("enable-gpu");
+  command_line->AppendSwitch("enable-accelerated-video-decode");
+  DiagnosticLog("BrowserApp appended switches: use-alloy-style, enable-gpu, enable-accelerated-video-decode");
 }
 
 void BrowserApp::OnScheduleMessagePumpWork(int64_t delay_ms) {
