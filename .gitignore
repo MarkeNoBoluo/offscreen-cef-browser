@@ -1,9 +1,15 @@
-build/
-build-review*/
-dist/
-.codex/
-.superpowers/
-.vs/
-*.user
-*.log
-third_party/cef/
+# Ignore everything at root level
+/*
+
+# Source code
+!CMakeLists.txt
+!src/
+!tests/
+!scripts/
+
+# Documentation
+!README.md
+!docs/
+
+# Git files
+!.gitignore

@@ -27,6 +27,7 @@ option(OFFSCREEN_BUILD_APP "Build the Qt + CEF browser application" ON)
 option(OFFSCREEN_BUILD_TESTS "Build unit tests" ON)
 
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "Supported configurations" FORCE)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/msvc-2017-x64")
 
 add_library(offscreen_core STATIC
   src/app/app_config.cpp
