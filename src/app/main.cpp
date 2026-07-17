@@ -20,6 +20,7 @@
 #include "app/browser_app.h"
 #include "app/browser_window_title.h"
 #include "app/diagnostic_log.h"
+#include "browser/browser_ime_handler.h"
 #include "browser/browser_service.h"
 #include "include/cef_app.h"
 #include "qt/browser_widget.h"
@@ -60,6 +61,7 @@ class BrowserMainWindow final : public QMainWindow {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  offscreen::SetDiagnosticLogFileToApplicationDirectory();
   offscreen::DiagnosticLog("main entered");
   CefEnableHighDPISupport();
 
@@ -90,11 +92,14 @@ int main(int argc, char* argv[]) {
   offscreen::DiagnosticLog("AppConfig initial_url=[" + app_config.initial_url +
                            "]");
 
+  offscreen::DiagnosticLog("Resolving runtime paths");
   const QString app_dir = QCoreApplication::applicationDirPath();
   const QString subprocess_path =
       NativePath(QDir(app_dir).filePath("offscreen_cef_subprocess.exe"));
   const QString cache_path = NativePath(QDir(app_dir).filePath("cef_cache"));
   const QString log_path = NativePath(QDir(app_dir).filePath("cef.log"));
+  // offscreen::DiagnosticLog("Runtime paths resolved app_dir=[" +
+  //                          app_dir.toStdString() + "]");
 
   CefSettings settings;
   settings.no_sandbox = true;
@@ -109,10 +114,10 @@ int main(int argc, char* argv[]) {
     stream << "CefSettings no_sandbox=" << settings.no_sandbox
            << " external_message_pump=" << settings.external_message_pump
            << " windowless_rendering_enabled="
-           << settings.windowless_rendering_enabled
-           << " subprocess_path=[" << subprocess_path.toStdString() << "]"
-           << " cache_path=[" << cache_path.toStdString() << "]"
-           << " log_path=[" << log_path.toStdString() << "]";
+           << settings.windowless_rendering_enabled;
+          //  << " subprocess_path=[" << subprocess_path.toStdString() << "]"
+          //  << " cache_path=[" << cache_path.toStdString() << "]"
+          //  << " log_path=[" << log_path.toStdString() << "]";
     offscreen::DiagnosticLog(stream.str());
   }
 
@@ -159,6 +164,22 @@ int main(int argc, char* argv[]) {
         browser_service.Resize(view_rect, device_scale_factor);
       });
   browser_widget_ptr->SetBrowserService(&browser_service);
+
+  // IME handler - created after widget HWND is available
+  offscreen::BrowserImeHandler ime_handler(
+      browser_widget_ptr->NativeParentHandle());
+  browser_widget_ptr->SetImeHandler(&ime_handler);
+  browser_service.SetImeCompositionRangeChangedCallback(
+      [browser_widget_ptr](const CefRange& selected_range,
+                           const std::vector<CefRect>& bounds) {
+        offscreen::DiagnosticLog(
+            "main IME composition range callback selected=" +
+            std::to_string(selected_range.from) + "-" +
+            std::to_string(selected_range.to) + " bounds=" +
+            std::to_string(bounds.size()));
+        browser_widget_ptr->OnImeCompositionRangeChanged(selected_range, bounds);
+      });
+
   QPointer<offscreen::BrowserWidget> browser_widget_guard(browser_widget_ptr);
   browser_service.SetCursorChangeCallback(
       [browser_widget_guard](int cursor_type, HCURSOR cursor_handle) {

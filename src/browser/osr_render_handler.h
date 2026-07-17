@@ -13,6 +13,8 @@ namespace offscreen {
 
 using PaintUpdateCallback =
     std::function<void(const std::vector<BrowserViewRect>&)>;
+using ImeCompositionRangeChangedCallback =
+    std::function<void(const CefRange&, const std::vector<CefRect>&)>;
 
 class OsrRenderHandler final : public CefRenderHandler {
  public:
@@ -23,6 +25,8 @@ class OsrRenderHandler final : public CefRenderHandler {
 
   void SetViewRect(BrowserViewRect view_rect, double device_scale_factor);
   BrowserViewRect view_rect() const;
+  void SetImeCompositionRangeChangedCallback(
+      ImeCompositionRangeChangedCallback callback);
 
   void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override;
   bool GetScreenInfo(CefRefPtr<CefBrowser> browser,
@@ -35,6 +39,10 @@ class OsrRenderHandler final : public CefRenderHandler {
                const void* buffer,
                int width,
                int height) override;
+  void OnImeCompositionRangeChanged(
+      CefRefPtr<CefBrowser> browser,
+      const CefRange& selected_range,
+      const RectList& character_bounds) override;
 
  private:
   mutable std::mutex mutex_;
@@ -42,6 +50,7 @@ class OsrRenderHandler final : public CefRenderHandler {
   double device_scale_factor_ = 1.0;
   std::shared_ptr<BrowserFrame> frame_;
   PaintUpdateCallback paint_update_callback_;
+  ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;
 
   IMPLEMENT_REFCOUNTING(OsrRenderHandler);
 };

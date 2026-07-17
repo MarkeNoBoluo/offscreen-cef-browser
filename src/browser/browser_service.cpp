@@ -72,6 +72,10 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
   render_handler_ = new OsrRenderHandler(initial_view_rect,
                                           initial_device_scale_factor, frame_,
                                           paint_update_callback_);
+  if (ime_composition_range_changed_callback_) {
+    render_handler_->SetImeCompositionRangeChangedCallback(
+        ime_composition_range_changed_callback_);
+  }
   client_ = new BrowserClient(this, render_handler_);
 
   {
@@ -101,6 +105,16 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
     last_error_ = "CefBrowserHost::CreateBrowser returned false";
   }
   return created;
+}
+
+void BrowserService::SetImeCompositionRangeChangedCallback(
+    ImeCompositionRangeChangedCallback callback) {
+  DiagnosticLog("BrowserService::SetImeCompositionRangeChangedCallback");
+  ime_composition_range_changed_callback_ = std::move(callback);
+  if (render_handler_) {
+    render_handler_->SetImeCompositionRangeChangedCallback(
+        ime_composition_range_changed_callback_);
+  }
 }
 
 void BrowserService::Resize(BrowserViewRect view_rect,
@@ -436,6 +450,54 @@ void BrowserService::OnTakeFocusRequest(bool next) {
 
 void BrowserService::OnSetFocusRequest() {
   DiagnosticLog("BrowserService::OnSetFocusRequest");
+}
+
+void BrowserService::ImeSetComposition(
+    const CefString& text,
+    const std::vector<CefCompositionUnderline>& underlines,
+    const CefRange& replacement_range,
+    const CefRange& selection_range) {
+  DiagnosticLog("BrowserService::ImeSetComposition has_browser=" +
+                std::string(browser_ ? "true" : "false") +
+                " text_len=" + std::to_string(text.length()) +
+                " underlines=" + std::to_string(underlines.size()) +
+                " replacement=" + std::to_string(replacement_range.from) +
+                "-" + std::to_string(replacement_range.to) +
+                " selection=" + std::to_string(selection_range.from) + "-" +
+                std::to_string(selection_range.to));
+  if (!browser_) return;
+  browser_->GetHost()->ImeSetComposition(text, underlines,
+                                         replacement_range, selection_range);
+}
+
+void BrowserService::ImeCommitText(const CefString& text,
+                                   const CefRange& replacement_range,
+                                   int relative_cursor_pos) {
+  DiagnosticLog("BrowserService::ImeCommitText has_browser=" +
+                std::string(browser_ ? "true" : "false") +
+                " text_len=" + std::to_string(text.length()) +
+                " replacement=" + std::to_string(replacement_range.from) +
+                "-" + std::to_string(replacement_range.to) +
+                " cursor=" + std::to_string(relative_cursor_pos));
+  if (!browser_) return;
+  browser_->GetHost()->ImeCommitText(text, replacement_range,
+                                     relative_cursor_pos);
+}
+
+void BrowserService::ImeCancelComposition() {
+  DiagnosticLog("BrowserService::ImeCancelComposition has_browser=" +
+                std::string(browser_ ? "true" : "false"));
+  if (!browser_) return;
+  browser_->GetHost()->ImeCancelComposition();
+}
+
+void BrowserService::ImeFinishComposingText(bool keep_selection) {
+  DiagnosticLog("BrowserService::ImeFinishComposingText has_browser=" +
+                std::string(browser_ ? "true" : "false") +
+                " keep_selection=" +
+                (keep_selection ? std::string("true") : std::string("false")));
+  if (!browser_) return;
+  browser_->GetHost()->ImeFinishComposingText(keep_selection);
 }
 
 }  // namespace offscreen

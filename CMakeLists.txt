@@ -40,6 +40,8 @@ add_library(offscreen_core STATIC
   src/browser/browser_geometry.h
   src/browser/browser_input_mapping.cpp
   src/browser/browser_input_mapping.h
+  src/browser/browser_ime_core.cpp
+  src/browser/browser_ime_core.h
   src/browser/browser_paint_geometry.cpp
   src/browser/browser_paint_geometry.h
 )
@@ -120,8 +122,19 @@ if(OFFSCREEN_BUILD_TESTS)
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
   )
 
+  add_executable(browser_ime_core_tests
+    tests/browser_ime_core_tests.cpp
+  )
+  target_link_libraries(browser_ime_core_tests PRIVATE offscreen_core imm32)
+  target_compile_features(browser_ime_core_tests PRIVATE cxx_std_17)
+  target_compile_definitions(browser_ime_core_tests PRIVATE
+    NOMINMAX
+    WIN32_LEAN_AND_MEAN
+    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:_HAS_ITERATOR_DEBUGGING=0>
+  )
+
   add_custom_target(offscreen_core_tests
-    DEPENDS app_config_tests browser_geometry_tests browser_close_state_tests browser_window_title_tests browser_paint_geometry_tests browser_input_mapping_tests
+    DEPENDS app_config_tests browser_geometry_tests browser_close_state_tests browser_window_title_tests browser_paint_geometry_tests browser_input_mapping_tests browser_ime_core_tests
   )
 
   add_test(NAME app_config_tests COMMAND app_config_tests)
@@ -130,6 +143,7 @@ if(OFFSCREEN_BUILD_TESTS)
   add_test(NAME browser_window_title_tests COMMAND browser_window_title_tests)
   add_test(NAME browser_paint_geometry_tests COMMAND browser_paint_geometry_tests)
   add_test(NAME browser_input_mapping_tests COMMAND browser_input_mapping_tests)
+  add_test(NAME browser_ime_core_tests COMMAND browser_ime_core_tests)
 endif()
 
 if(OFFSCREEN_BUILD_APP)

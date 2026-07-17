@@ -23,6 +23,8 @@ class BrowserService final : public BrowserClient::Delegate {
   using BrowserClosedCallback = std::function<void()>;
   using CursorChangeCallback =
       std::function<void(int cursor_type, CefCursorHandle cursor_handle)>;
+  using ImeCompositionRangeChangedCallback =
+      std::function<void(const CefRange&, const std::vector<CefRect>&)>;
 
   BrowserService();
   ~BrowserService() override;
@@ -34,6 +36,8 @@ class BrowserService final : public BrowserClient::Delegate {
   void SetBrowserClosedCallback(BrowserClosedCallback browser_closed_callback);
   void SetPaintUpdateCallback(PaintUpdateCallback callback);
   void SetCursorChangeCallback(CursorChangeCallback callback);
+  void SetImeCompositionRangeChangedCallback(
+      ImeCompositionRangeChangedCallback callback);
   void Resize(BrowserViewRect view_rect, double device_scale_factor);
   void Navigate(const std::string& url);
   void Reload();
@@ -68,6 +72,17 @@ class BrowserService final : public BrowserClient::Delegate {
   void SetBrowserFocus(bool focus);
   void SendCaptureLost();
 
+  // IME
+  void ImeSetComposition(const CefString& text,
+                         const std::vector<CefCompositionUnderline>& underlines,
+                         const CefRange& replacement_range,
+                         const CefRange& selection_range);
+  void ImeCommitText(const CefString& text,
+                     const CefRange& replacement_range,
+                     int relative_cursor_pos);
+  void ImeCancelComposition();
+  void ImeFinishComposingText(bool keep_selection);
+
   // BrowserClient::Delegate overrides
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override;
   void OnBrowserClosing(CefRefPtr<CefBrowser> browser) override;
@@ -89,6 +104,7 @@ class BrowserService final : public BrowserClient::Delegate {
   std::shared_ptr<BrowserFrame> frame_;
   PaintUpdateCallback paint_update_callback_;
   CursorChangeCallback cursor_change_callback_;
+  ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;
   bool close_when_created_ = false;
   bool is_closing_ = false;
   bool is_loading_ = false;

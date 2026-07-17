@@ -47,6 +47,12 @@ BrowserViewRect OsrRenderHandler::view_rect() const {
   return view_rect_;
 }
 
+void OsrRenderHandler::SetImeCompositionRangeChangedCallback(
+    ImeCompositionRangeChangedCallback callback) {
+  DiagnosticLog("OsrRenderHandler::SetImeCompositionRangeChangedCallback");
+  ime_composition_range_changed_callback_ = std::move(callback);
+}
+
 void OsrRenderHandler::GetViewRect(CefRefPtr<CefBrowser> browser,
                                     CefRect& rect) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -161,6 +167,26 @@ void OsrRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser,
 
   if (paint_update_callback_) {
     paint_update_callback_(dip_rects);
+  }
+}
+
+void OsrRenderHandler::OnImeCompositionRangeChanged(
+    CefRefPtr<CefBrowser> browser,
+    const CefRange& selected_range,
+    const RectList& character_bounds) {
+  (void)browser;
+  std::ostringstream stream;
+  stream << "OsrRenderHandler::OnImeCompositionRangeChanged selected="
+         << selected_range.from << "-" << selected_range.to
+         << " bounds=" << character_bounds.size();
+  if (!character_bounds.empty()) {
+    const auto& first = character_bounds.front();
+    stream << " first=" << first.x << "," << first.y << " " << first.width
+           << "x" << first.height;
+  }
+  DiagnosticLog(stream.str());
+  if (ime_composition_range_changed_callback_) {
+    ime_composition_range_changed_callback_(selected_range, character_bounds);
   }
 }
 

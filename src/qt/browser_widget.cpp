@@ -7,8 +7,11 @@
 
 #include "app/diagnostic_log.h"
 #include "browser/browser_frame.h"
+#include "browser/browser_ime_core.h"
+#include "browser/browser_ime_handler.h"
 #include "browser/browser_input_mapping.h"
 #include "browser/browser_service.h"
+#include <QCoreApplication>
 #include <QFocusEvent>
 #include <QKeyEvent>
 #include <QMetaObject>
@@ -59,13 +62,83 @@ constexpr int kCursorGrabbing = 42;          // CT_GRABBING
 
 }  // namespace
 
+// --- IME composition message handler ---
+
+void BrowserWidget::HandleImeCompositionMessage(WPARAM wParam,
+                                                 LPARAM lParam) {
+  DiagnosticLog("BrowserWidget::HandleImeCompositionMessage wParam=" +
+                HexValue(static_cast<uintptr_t>(wParam)) + " lParam=" +
+                HexValue(static_cast<uintptr_t>(lParam)) +
+                " has_ime_handler=" +
+                (ime_handler_ ? std::string("true") : std::string("false")) +
+                " has_browser_service=" +
+                (browser_service_ ? std::string("true")
+                                  : std::string("false")));
+  if (!ime_handler_ || !browser_service_) return;
+
+  std::wstring commit_text;
+  std::wstring composition_text;
+  std::vector<CefCompositionUnderline> underlines;
+  CefRange selection_range(0, 0);
+
+  const bool handled = ime_handler_->HandleImeComposition(
+      lParam, commit_text, composition_text, underlines, selection_range);
+
+  DiagnosticLog("BrowserWidget::HandleImeCompositionMessage handled=" +
+                std::string(handled ? "true" : "false") +
+                " commit_len=" + std::to_string(commit_text.size()) +
+                " comp_len=" + std::to_string(composition_text.size()) +
+                " underlines=" + std::to_string(underlines.size()) +
+                " selection=" + std::to_string(selection_range.from) + "-" +
+                std::to_string(selection_range.to));
+
+  if (!handled) return;
+
+  const CefRange invalid_range(UINT32_MAX, UINT32_MAX);
+
+  // Result string (committed text): commit first
+  if (!commit_text.empty()) {
+    browser_service_->ImeCommitText(commit_text, invalid_range, 0);
+    if (composition_text.empty()) {
+      ime_handler_->ResetComposition();
+    }
+  }
+
+  // Composition string (in-progress text): update after result
+  if (!composition_text.empty()) {
+    browser_service_->ImeSetComposition(composition_text, underlines,
+                                        invalid_range, selection_range);
+    return;
+  }
+
+  // Both texts empty: if composition flag was set, it's just starting -
+  // don't cancel. Otherwise it's a genuine cancellation.
+  if (commit_text.empty()) {
+    if (ImeHasCompositionString(lParam)) {
+      // Composition is active but text is empty, initial state, wait
+      return;
+    }
+    is_composing_ = false;
+    browser_service_->ImeCancelComposition();
+    ime_handler_->CancelComposition();
+  }
+}
+
 BrowserWidget::BrowserWidget(QWidget* parent) : QWidget(parent) {
   setAttribute(Qt::WA_NativeWindow, true);
   setAttribute(Qt::WA_DontCreateNativeAncestors, false);
+  setAttribute(Qt::WA_InputMethodEnabled, true);
   setFocusPolicy(Qt::StrongFocus);
   setMouseTracking(true);
   setAutoFillBackground(false);
+  QCoreApplication::instance()->installNativeEventFilter(this);
   DiagnosticLog("BrowserWidget constructed");
+}
+
+BrowserWidget::~BrowserWidget() {
+  if (QCoreApplication::instance()) {
+    QCoreApplication::instance()->removeNativeEventFilter(this);
+  }
 }
 
 HWND BrowserWidget::NativeParentHandle() const {
@@ -104,6 +177,39 @@ void BrowserWidget::SetBrowserService(BrowserService* service) {
   browser_service_ = service;
   DiagnosticLog("BrowserWidget::SetBrowserService service=" +
                 HexValue(reinterpret_cast<uintptr_t>(service)));
+}
+
+void BrowserWidget::SetImeHandler(BrowserImeHandler* handler) {
+  ime_handler_ = handler;
+  DiagnosticLog("BrowserWidget::SetImeHandler handler=" +
+                HexValue(reinterpret_cast<uintptr_t>(handler)));
+}
+
+void BrowserWidget::OnImeCompositionRangeChanged(
+    const CefRange& selected_range,
+    const std::vector<CefRect>& bounds) {
+  DiagnosticLog("BrowserWidget::OnImeCompositionRangeChanged selected=" +
+                std::to_string(selected_range.from) + "-" +
+                std::to_string(selected_range.to) + " bounds=" +
+                std::to_string(bounds.size()));
+  if (!ime_handler_) return;
+
+  const double scale = CurrentDeviceScaleFactor();
+  std::vector<CefRect> device_bounds;
+  device_bounds.reserve(bounds.size());
+  for (const auto& b : bounds) {
+    device_bounds.push_back(CefRect(
+        static_cast<int>(b.x * scale),
+        static_cast<int>(b.y * scale),
+        static_cast<int>(b.width * scale),
+        static_cast<int>(b.height * scale)));
+  }
+
+  CefRange device_range;
+  device_range.from = selected_range.from;
+  device_range.to = selected_range.to;
+
+  ime_handler_->UpdateCompositionRange(device_range, device_bounds);
 }
 
 void BrowserWidget::SetCefCursor(int cursor_type, HCURSOR cursor_handle) {
@@ -199,37 +305,131 @@ void BrowserWidget::SetCefCursor(int cursor_type, HCURSOR cursor_handle) {
   }
 }
 
-bool BrowserWidget::nativeEvent(const QByteArray& event_type, void* message,
-                                long* result) {
+bool BrowserWidget::nativeEventFilter(const QByteArray& event_type,
+                                      void* message,
+                                      long* result) {
   (void)event_type;
   MSG* windows_message = static_cast<MSG*>(message);
   if (!windows_message) {
-    return QWidget::nativeEvent(event_type, message, result);
+    return false;
   }
 
   switch (windows_message->message) {
-    case WM_SYSCHAR:
-    case WM_SYSKEYDOWN:
-    case WM_SYSKEYUP:
-    case WM_KEYDOWN:
-    case WM_KEYUP:
-    case WM_CHAR:
-      if (browser_service_) {
-        browser_service_->SendWindowsKeyEvent(
-            static_cast<uint32_t>(windows_message->message),
-            static_cast<uintptr_t>(windows_message->wParam),
-            static_cast<intptr_t>(windows_message->lParam));
-        if (result) {
-          *result = 0;
-        }
-        return true;
-      }
+    case WM_INPUTLANGCHANGE:
+    case WM_IME_SETCONTEXT:
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    case WM_IME_CHAR:
       break;
     default:
-      break;
+      return false;
   }
 
-  return QWidget::nativeEvent(event_type, message, result);
+  const HWND widget_handle = reinterpret_cast<HWND>(winId());
+  const QWidget* top_level_widget = window();
+  const HWND top_level_handle =
+      top_level_widget ? reinterpret_cast<HWND>(top_level_widget->winId())
+                       : nullptr;
+  const bool is_browser_window =
+      windows_message->hwnd == widget_handle ||
+      windows_message->hwnd == top_level_handle;
+
+  DiagnosticLog("BrowserWidget::nativeEventFilter message=" +
+                HexValue(static_cast<uintptr_t>(windows_message->message)) +
+                " hwnd=" +
+                HexValue(reinterpret_cast<uintptr_t>(windows_message->hwnd)) +
+                " widget_hwnd=" +
+                HexValue(reinterpret_cast<uintptr_t>(widget_handle)) +
+                " top_hwnd=" +
+                HexValue(reinterpret_cast<uintptr_t>(top_level_handle)) +
+                " matched=" +
+                std::string(is_browser_window ? "true" : "false"));
+  if (!is_browser_window) {
+    return false;
+  }
+
+  return HandleImeNativeMessage(windows_message, result);
+}
+
+bool BrowserWidget::HandleImeNativeMessage(MSG* windows_message,
+                                           long* result) {
+  if (ime_handler_) {
+    ime_handler_->SetWindowHandle(windows_message->hwnd);
+  }
+
+  switch (windows_message->message) {
+    case WM_INPUTLANGCHANGE:
+      DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_INPUTLANGCHANGE wParam=" +
+                    HexValue(static_cast<uintptr_t>(windows_message->wParam)) +
+                    " lParam=" +
+                    HexValue(static_cast<uintptr_t>(windows_message->lParam)));
+      if (ime_handler_) {
+        ime_handler_->HandleInputLanguageChange();
+      }
+      return false;
+    case WM_IME_SETCONTEXT:
+      DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_IME_SETCONTEXT wParam=" +
+                    HexValue(static_cast<uintptr_t>(windows_message->wParam)) +
+                    " lParam=" +
+                    HexValue(static_cast<uintptr_t>(windows_message->lParam)));
+      if (ime_handler_) {
+        ime_handler_->HandleImeSetContext(windows_message->lParam);
+      }
+      return false;
+    case WM_IME_STARTCOMPOSITION:
+      DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_IME_STARTCOMPOSITION");
+      is_composing_ = true;
+      if (ime_handler_) {
+        ime_handler_->HandleImeStartComposition();
+      }
+      if (result) *result = 0;
+      return true;
+    case WM_IME_COMPOSITION:
+      DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_IME_COMPOSITION wParam=" +
+                    HexValue(static_cast<uintptr_t>(windows_message->wParam)) +
+                    " lParam=" +
+                    HexValue(static_cast<uintptr_t>(windows_message->lParam)));
+      HandleImeCompositionMessage(windows_message->wParam,
+                                  windows_message->lParam);
+      if (result) *result = 0;
+      return true;
+    case WM_IME_ENDCOMPOSITION:
+      DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_IME_ENDCOMPOSITION");
+      is_composing_ = false;
+      if (ime_handler_) {
+        ime_handler_->HandleImeEndComposition();
+      }
+      if (result) *result = 0;
+      return true;
+    case WM_IME_CHAR: {
+      // Some IMM32 input methods submit the selected candidate through
+      // WM_IME_CHAR instead of GCS_RESULTSTR. Forward it explicitly because
+      // native event filtering prevents Qt from producing a QKeyEvent here.
+      const wchar_t ime_char = static_cast<wchar_t>(
+          static_cast<uintptr_t>(windows_message->wParam) & 0xFFFFu);
+      const std::wstring committed_text(1, ime_char);
+      DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_IME_CHAR commit wParam=" +
+                    HexValue(static_cast<uintptr_t>(windows_message->wParam)) +
+                    " utf16=" +
+                    HexValue(static_cast<uintptr_t>(ime_char)) +
+                    " has_browser_service=" +
+                    (browser_service_ ? std::string("true")
+                                      : std::string("false")));
+      if (browser_service_) {
+        const CefRange invalid_range(UINT32_MAX, UINT32_MAX);
+        browser_service_->ImeCommitText(committed_text, invalid_range, 0);
+      }
+      is_composing_ = false;
+      if (ime_handler_) {
+        ime_handler_->ResetComposition();
+      }
+      if (result) *result = 0;
+      return true;
+    }
+    default:
+      return false;
+  }
 }
 
 void BrowserWidget::ScheduleFrameUpdate(
@@ -401,6 +601,13 @@ void BrowserWidget::keyPressEvent(QKeyEvent* event) {
     return;
   }
 
+  // During IME composition, skip SendCharEvent to avoid duplicate text
+  if (is_composing_) {
+    DiagnosticLog("BrowserWidget::keyPressEvent skipped during IME composition");
+    event->accept();
+    return;
+  }
+
   const int virtual_key = static_cast<int>(event->nativeVirtualKey());
   const int scan_code = static_cast<int>(event->nativeScanCode());
   const int modifiers = static_cast<int>(event->modifiers());
@@ -461,6 +668,7 @@ void BrowserWidget::keyReleaseEvent(QKeyEvent* event) {
 
 void BrowserWidget::focusInEvent(QFocusEvent* event) {
   QWidget::focusInEvent(event);
+  DiagnosticLog("BrowserWidget::focusInEvent");
   if (browser_service_) {
     browser_service_->SetBrowserFocus(true);
   }
@@ -468,8 +676,18 @@ void BrowserWidget::focusInEvent(QFocusEvent* event) {
 
 void BrowserWidget::focusOutEvent(QFocusEvent* event) {
   QWidget::focusOutEvent(event);
+  DiagnosticLog("BrowserWidget::focusOutEvent composing=" +
+                std::string(is_composing_ ? "true" : "false"));
   if (browser_service_) {
     browser_service_->SetBrowserFocus(false);
+  }
+  // Cancel composition when losing focus
+  if (is_composing_ && ime_handler_) {
+    is_composing_ = false;
+    ime_handler_->HandleImeEndComposition();
+    if (browser_service_) {
+      browser_service_->ImeCancelComposition();
+    }
   }
 }
 

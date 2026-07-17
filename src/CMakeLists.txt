@@ -15,6 +15,8 @@ set(OFFSCREEN_APP_SRCS
   browser/browser_client.h
   browser/browser_geometry.cpp
   browser/browser_geometry.h
+  browser/browser_ime_handler.cpp
+  browser/browser_ime_handler.h
   browser/browser_service.cpp
   browser/browser_service.h
   browser/osr_render_handler.cpp
@@ -40,6 +42,7 @@ target_link_libraries(offscreen_cef_browser
     libcef_lib
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
+    imm32
 )
 target_compile_features(offscreen_cef_browser PRIVATE cxx_std_17)
 target_compile_definitions(offscreen_cef_browser PRIVATE
@@ -60,6 +63,7 @@ target_link_libraries(offscreen_cef_subprocess
     libcef_lib
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
+    imm32
 )
 target_compile_features(offscreen_cef_subprocess PRIVATE cxx_std_17)
 target_compile_definitions(offscreen_cef_subprocess PRIVATE
