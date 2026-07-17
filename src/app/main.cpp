@@ -8,7 +8,9 @@
 #include <QCloseEvent>
 #include <QDir>
 #include <QMainWindow>
+#include <QMetaObject>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QTimer>
 
@@ -155,6 +157,22 @@ int main(int argc, char* argv[]) {
       [&browser_service](offscreen::BrowserViewRect view_rect,
                          double device_scale_factor) {
         browser_service.Resize(view_rect, device_scale_factor);
+      });
+  browser_widget_ptr->SetBrowserService(&browser_service);
+  QPointer<offscreen::BrowserWidget> browser_widget_guard(browser_widget_ptr);
+  browser_service.SetCursorChangeCallback(
+      [browser_widget_guard](int cursor_type, HCURSOR cursor_handle) {
+        if (!browser_widget_guard) {
+          return;
+        }
+        QMetaObject::invokeMethod(
+            browser_widget_guard.data(),
+            [browser_widget_guard, cursor_type, cursor_handle]() {
+              if (browser_widget_guard) {
+                browser_widget_guard->SetCefCursor(cursor_type, cursor_handle);
+              }
+            },
+            Qt::QueuedConnection);
       });
   browser_service.SetBrowserClosedCallback([&main_window]() {
     offscreen::DiagnosticLog("Browser closed callback invoked");

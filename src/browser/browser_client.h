@@ -4,6 +4,8 @@
 
 #include "include/cef_client.h"
 #include "include/cef_display_handler.h"
+#include "include/cef_focus_handler.h"
+#include "include/cef_keyboard_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_request_handler.h"
@@ -14,7 +16,9 @@ class BrowserClient final : public CefClient,
                             public CefLifeSpanHandler,
                             public CefLoadHandler,
                             public CefDisplayHandler,
-                            public CefRequestHandler {
+                            public CefRequestHandler,
+                            public CefKeyboardHandler,
+                            public CefFocusHandler {
  public:
   class Delegate {
    public:
@@ -28,6 +32,10 @@ class BrowserClient final : public CefClient,
     virtual void OnTitleChanged(const std::string& title) = 0;
     virtual void OnLoadErrorText(const std::string& error_text) = 0;
     virtual void OnRenderProcessTerminated() = 0;
+    virtual void OnCursorChanged(int cursor_type,
+                                 CefCursorHandle cursor_handle) = 0;
+    virtual void OnTakeFocusRequest(bool next) = 0;
+    virtual void OnSetFocusRequest() = 0;
   };
 
   BrowserClient(Delegate* delegate,
@@ -38,6 +46,8 @@ class BrowserClient final : public CefClient,
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override;
   CefRefPtr<CefRenderHandler> GetRenderHandler() override;
   CefRefPtr<CefRequestHandler> GetRequestHandler() override;
+  CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override;
+  CefRefPtr<CefFocusHandler> GetFocusHandler() override;
 
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
   bool DoClose(CefRefPtr<CefBrowser> browser) override;
@@ -55,6 +65,20 @@ class BrowserClient final : public CefClient,
                      const CefString& title) override;
   void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
                                  TerminationStatus status) override;
+  bool OnCursorChange(CefRefPtr<CefBrowser> browser,
+                      CefCursorHandle cursor,
+                      cef_cursor_type_t type,
+                      const CefCursorInfo& custom_cursor_info) override;
+  bool OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
+                     const CefKeyEvent& event,
+                     CefEventHandle os_event,
+                     bool* is_keyboard_shortcut) override;
+  bool OnKeyEvent(CefRefPtr<CefBrowser> browser,
+                  const CefKeyEvent& event,
+                  CefEventHandle os_event) override;
+  void OnTakeFocus(CefRefPtr<CefBrowser> browser, bool next) override;
+  bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
+  void OnGotFocus(CefRefPtr<CefBrowser> browser) override;
 
  private:
   Delegate* delegate_ = nullptr;
