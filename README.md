@@ -1,92 +1,116 @@
 # Offscreen CEF Browser
 
-基于 Chromium Embedded Framework (CEF) 的离屏渲染浏览器项目规划仓库。目标是在 C++ 中集成 CEF，并使用 Qt Widgets 承载浏览器画面、输入事件、生命周期和调试能力。V1 主要支持 Qt 5.14.2 MSVC2017 64bit 环境。
+基于 Chromium Embedded Framework (CEF 96) + Qt 5.14.2 的离屏渲染浏览器，支持多 Tab 页浏览。
 
-当前仓库处于前期调研与设计阶段，尚未包含可编译源码。根目录 README 提供项目入口，完整调研与落地方案放在 [docs](docs/README.md)。
+当前已完成 V2.5.1，实现了完整的 OSR 渲染、输入事件转发、中文输入法支持及多 Tab 页管理。
 
-## 项目目标
+## 版本历史
 
-- 使用 CEF 创建 windowless/off-screen browser。
-- 使用 Qt 5.14.2 MSVC2017 64bit 承载渲染结果，首版优先采用 CPU buffer + QWidget/QPainter 路线。
-- 后续按性能需求扩展到 QOpenGLWidget 纹理上传或 CEF shared texture 加速路径。
-- 保留浏览器基础能力：导航、加载状态、鼠标/键盘/滚轮输入、中文输入法、弹窗、DevTools、下载和基础网络拦截。
-- 兼容可视化设计系统运行要求：JavaScript、LocalStorage、HTML5 Video、Canvas、CSS3、XHR/Fetch、Cookie、WebSocket、Drag & Drop、Clipboard、File API 等能力必须可用。
-- 构建系统采用 CMake，优先对齐 CEF binary distribution 和 Qt 官方 CMake 用法。
-- 版本路线：V1 先实现 Windows x64（`windows64`/`win64`）+ Qt 5.14.2 MSVC2017 64bit；V2 再根据情况评估 Qt 6.9.3、`win32` 和 `linux-amd64`；不考虑 macOS。
-
-## 已确认的关键技术决策
-
-| 主题 | 决策 |
-| --- | --- |
-| Chromium 内核 | 最低按 Chromium 90+，推荐 Chromium 100+，最佳 Chromium 120+；当前 CEF stable 150 已满足该目标。 |
-| CEF 版本 | 面向生产优先选择 CEF release branch，不直接依赖 master。2026-07-16 调研时官方 supported table 显示 Stable 为 150 / branch 7871。 |
-| 运行风格 | OSR/windowless 浏览器需要使用 Alloy style；参考 cefclient 的 `--off-screen-rendering-enabled` 模式。 |
-| 首版渲染 | 先实现 `CefRenderHandler::OnPaint` 的 BGRA buffer 拷贝，Qt 侧用 `QImage::Format_ARGB32` 与 `QPainter` 绘制。 |
-| 加速渲染 | `OnAcceleratedPaint` / shared texture 作为二阶段优化，不阻塞首版，因为跨 CEF/Qt/OpenGL/D3D 的零拷贝互操作复杂度更高。 |
-| 消息循环 | 推荐使用 CEF external message pump + Qt `QTimer` 集成；Windows/Linux 可评估 CEF multi-threaded message loop。 |
-| DPI | `GetScreenInfo().device_scale_factor` 与 Qt `devicePixelRatioF()` 必须统一，`GetViewRect` 使用 DIP，`OnPaint` buffer 使用实际像素尺寸。 |
-| 输入法 | 中文输入需要纳入首版验收，Qt `QInputMethodEvent` 要转发到 CEF IME API。 |
-| 版本路线 | V1 仅要求 Windows x64（`windows64`/`win64`）+ Qt 5.14.2 MSVC2017 64bit 可构建、可运行、可部署；V2 再根据情况评估 Qt 6.9.3、`win32` 和 `linux-amd64`。 |
+| 版本 | 提交 | 内容 |
+| --- | --- | --- |
+| V1 | `40ae5ef` | 工程骨架：CMake 构建系统、CEF/Qt 工具链校验、`offscreen_core` 静态库、7 个单元测试 |
+| V2.1 | `24a593c` | 浏览器核心：`BrowserApp`/`BrowserClient`/`BrowserService`、CEF 初始化与生命周期、构建脚本 `scripts/build.ps1` |
+| V2.2 | `7c791c5` | 软件 OSR 渲染：`OsrRenderHandler::OnPaint` BGRA buffer → `BrowserFrame` → `BrowserWidget` Qt 绘制 |
+| V2.3 | `1fbb004` | 输入事件转发：鼠标/键盘/滚轮/焦点/光标事件从 Qt 到 CEF 的完整映射 |
+| V2.4 | `0773060` | IME 中文输入法支持：`BrowserImeCore` + `BrowserImeHandler`，WM_IME_* 消息处理与 CEF IME API 对接 |
+| V2.5.1 | `250ed5c` | 子窗口创建与 Tab 页管理：`TabManager` 支持多 Web 页以 Tab 形式同时浏览 |
 
 ## 构建
-	PowerShell -ExecutionPolicy Bypass -File "scripts\build.ps1"
-## 文档索引
 
-- [docs/README.md](docs/README.md)：文档总览与阅读顺序。
-- [docs/research.md](docs/research.md)：CEF、cefclient、Qt 5.14.2 与后续 Qt6 评估方向的前期调研。
-- [docs/visualization-system-compatibility.md](docs/visualization-system-compatibility.md)：可视化设计系统加载兼容性要求。
-- [docs/architecture.md](docs/architecture.md)：目标架构、线程模型、渲染与输入链路。
-- [docs/implementation-plan.md](docs/implementation-plan.md)：分阶段开发计划、验收标准、风险清单。
+**前置条件：** CMake 3.21+、VS2017 x64、CEF 96 (`windows64_vs2017`)、Qt 5.14.2 (`msvc2017_64`)。
 
-## 建议目录结构
-
-```text
-offscreen-cef-browser/
-  CMakeLists.txt
-  cmake/
-  third_party/cef/
-  src/
-    app/
-    browser/
-    qt/
-    subprocess/
-  resources/
-  docs/
+```powershell
+PowerShell -ExecutionPolicy Bypass -File "scripts\build.ps1"
 ```
 
-说明：
+脚本按顺序执行：工具链校验 → CMake 配置 → 构建 → CTest 测试。
 
-- `third_party/cef/` 放 CEF binary distribution 或由本地路径变量指向，不建议把大型二进制直接提交到普通源码仓库。
-- `src/subprocess/` 推荐单独生成 CEF 子进程可执行文件，便于控制进程启动成本和部署结构。
-- `src/qt/` 承载 Qt widget、事件映射、DPI/IME 适配。
-- `src/browser/` 承载 CEF client、render handler、生命周期和浏览器服务封装。
+可选参数：
 
-## 开发前置条件
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `-CefRoot` | `D:\Git\cef_binary_96.0.18+gfe551e4+chromium-96.0.4664.110_windows64_vs2017` | CEF binary distribution 路径 |
+| `-QtPrefix` | 自动从 PATH 查找 `qmake` | Qt 5.14.2 msvc2017_64 前缀 |
+| `-Configuration` | `Debug` | `Debug` 或 `Release` |
 
-- C++17 或更高，V1 主要面向 Qt 5.14.2 MSVC2017 64bit。
-- CMake，Qt 5.14.2 MSVC2017 64bit。
-- CEF binary distribution，优先选当前 supported stable branch。
-- V1 使用 Windows x64（`windows64`/`win64`）工具链，主要支持 MSVC2017 64-bit，并确保 CEF、Qt、编译器和生成器架构一致。
-- V2 再根据项目需要评估 Qt 6.9.3、`win32` 与 `linux-amd64`；如支持 `win32`，需要 x86 CEF/Qt/编译器一致；如支持 `linux-amd64`，按 CEF 当前 release branch 的 Linux 构建与运行时依赖准备工具链。
+## 架构
 
-## 第一阶段验收目标
+两个可执行文件共享一个静态库：
 
-- 能启动 Qt 主窗口并初始化 CEF。
-- 能创建一个 windowless browser 并加载 URL。
-- `OnPaint` buffer 能稳定显示到 Qt widget。
-- resize、鼠标、滚轮、键盘、焦点、基础中文输入可用。
-- 可视化设计系统的 JS、LocalStorage、Canvas、Video、Fetch、Cookie、WebSocket 等能力通过验收。
-- DevTools 可通过独立窗口或 remote debugging port 打开。
-- 关闭窗口时能按 CEF 生命周期正确释放 browser 并调用 `CefShutdown()`。
-- V1 在 Windows x64（`windows64`/`win64`）+ Qt 5.14.2 MSVC2017 64bit 环境完成构建、启动、渲染、输入和退出验收。
+| 目标 | 角色 |
+| --- | --- |
+| `offscreen_cef_browser` | Qt GUI + CEF 浏览器进程，链接 `offscreen_core`、`Qt5::Widgets`、`libcef_lib`、`libcef_dll_wrapper` |
+| `offscreen_cef_subprocess` | CEF 子进程入口，仅链接 CEF 库 |
+| `offscreen_core` (静态库) | 共享逻辑：`AppConfig`、输入映射、IME 核心、几何、绘制几何、关闭状态、窗口标题，无 Qt/CEF 依赖 |
+
+### 启动链路
+
+`main()` → `CefExecuteProcess` → `CefInitialize` (external message pump) → `QApplication` → 10ms `CefDoMessageLoopWork` 定时器 → `BrowserService::CreateBrowser` (Alloy style, `SetAsWindowless`) → `QApplication::exec()` → 关闭 → `CefShutdown`
+
+### OSR 渲染链路
+
+`OsrRenderHandler::OnPaint` (BGRA buffer) → `BrowserFrame::SetViewImage` (互斥锁下深拷贝) → `PaintUpdateCallback` → `BrowserWidget::ScheduleFrameUpdate` (Qt::QueuedConnection) → `paintEvent` → `QPainter::drawImage`。弹窗图像通过 `OnPopupShow/OnPopupSize` 叠加合成。
+
+### 输入链路
+
+`BrowserWidget::nativeEvent` (WM_KEYDOWN/KEYUP/CHAR/SYSCHAR) + Qt 鼠标/键盘/滚轮/焦点事件重写 → `browser_input_mapping` 辅助函数 (Qt→CEF 标志转换) → `BrowserService::Send*` 方法 → `CefBrowserHost::SendKeyEvent/SendMouseClickEvent/...`
+
+### 生命周期
+
+`BrowserClient` 实现 `CefClient` + 6 个 handler 接口，回调委托给 `BrowserService`（实现 `BrowserClient::Delegate`）。关闭使用 `DecideBrowserCloseAction` 状态机依次执行 `TryCloseBrowser` → `DoClose` → `OnBeforeClose`。
+
+### 消息循环
+
+External pump 模式：`BrowserApp::OnScheduleMessagePumpWork` → `QTimer::singleShot(delay_ms)` → `CefDoMessageLoopWork()`。CEF UI 线程 = Qt GUI 线程。
+
+## 目录结构
+
+```
+offscreen-cef-browser/
+  CMakeLists.txt              # 根构建文件
+  README.md
+  scripts/
+    build.ps1                 # 一键构建脚本
+  src/
+    app/                      # 入口：main.cpp, BrowserApp, AppConfig, window_title
+    browser/                  # 核心：BrowserService, BrowserClient, OsrRenderHandler,
+                              #       TabManager, BrowserImeCore/Handler,
+                              #       BrowserFrame, input_mapping, geometry, close_state
+    qt/                       # Qt 集成：BrowserWidget (绘制、输入、IME、nativeEvent)
+    subprocess/               # CEF 子进程入口
+  tests/                      # 7 个测试可执行文件 + test_input_page.html
+  docs/                       # 调研、架构、实现计划
+```
+
+## 关键约束
+
+- Debug 构建必须定义 `_HAS_ITERATOR_DEBUGGING=0`，避免 Qt Debug DLL 与 MSVC 迭代器调试的 ABI 不兼容（否则 `QString::toStdString()` 崩溃）。
+- CEF 96 + Alloy style 是 OSR/windowless 模式的硬性要求。浏览器创建时设置 `windowless_frame_rate=30`。
+- DPI 坐标规则：`GetViewRect` 返回 DIP；`OnPaint` buffer 尺寸是物理像素；`device_scale_factor` 必须等于 `devicePixelRatioF()`；脏矩形需从物理像素转 DIP 再调用 `QWidget::update()`。
+- `BrowserFrame` 使用 `std::mutex` —— `Snapshot()` 返回深拷贝供 Qt 线程使用。
+- 测试仅链接 `offscreen_core`（无 Qt/CEF 依赖），通过 CTest 运行。
+
+## 文档索引
+
+- [docs/README.md](docs/README.md) — 文档总览与阅读顺序
+- [docs/research.md](docs/research.md) — CEF、cefclient、Qt 前期调研
+- [docs/architecture.md](docs/architecture.md) — 架构、线程模型、渲染与输入链路
+- [docs/implementation-plan.md](docs/implementation-plan.md) — 分阶段开发计划与验收标准
+- [docs/visualization-system-compatibility.md](docs/visualization-system-compatibility.md) — 可视化设计系统兼容性要求
+
+## 技术栈
+
+| 组件 | 版本 | 说明 |
+| --- | --- | --- |
+| CEF | 96.0.18 (Chromium 96) | `windows64_vs2017`，Alloy style，OSR windowless |
+| Qt | 5.14.2 | `msvc2017_64`，Widgets 模块 |
+| 编译器 | MSVC 2017 (19.1x) | x64，`/MT` 或 `/MTd` 静态运行时 |
+| CMake | 3.21+ | Visual Studio 15 2017 generator |
+| C++ 标准 | C++17 | |
 
 ## 主要参考资料
 
-- CEF General Usage: https://chromiumembedded.github.io/cef/general_usage.html
-- CEF Branches and Building: https://chromiumembedded.github.io/cef/branches_and_building.html
-- CEF cefclient sample: https://github.com/chromiumembedded/cef/tree/master/tests/cefclient
-- CEF render handler header: https://raw.githubusercontent.com/chromiumembedded/cef/master/include/cef_render_handler.h
-- Qt QWidget: https://doc.qt.io/qt-6/qwidget.html
-- Qt QImage: https://doc.qt.io/qt-6/qimage.html
-- Qt QOpenGLWidget: https://doc.qt.io/qt-6/qopenglwidget.html
-- Qt CMake: https://doc.qt.io/qt-6/cmake-get-started.html
+- [CEF General Usage](https://chromiumembedded.github.io/cef/general_usage.html)
+- [CEF Branches and Building](https://chromiumembedded.github.io/cef/branches_and_building.html)
+- [CEF cefclient OSR 参考](https://github.com/chromiumembedded/cef/tree/master/tests/cefclient)
+- [CEF Render Handler](https://raw.githubusercontent.com/chromiumembedded/cef/master/include/cef_render_handler.h)
