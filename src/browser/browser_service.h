@@ -28,6 +28,9 @@ class BrowserService final : public BrowserClient::Delegate {
   using PopupRequestCallback = std::function<void(const std::string& url)>;
   using AddressChangeCallback = std::function<void(const std::string& url)>;
   using TitleChangeCallback = std::function<void(const std::string& title)>;
+  using LoadStateChangeCallback =
+      std::function<void(bool is_loading, bool can_go_back, bool can_go_forward)>;
+  using LoadErrorCallback = std::function<void(const std::string& error_text)>;
 
   BrowserService();
   ~BrowserService() override;
@@ -44,6 +47,8 @@ class BrowserService final : public BrowserClient::Delegate {
   void SetPopupRequestCallback(PopupRequestCallback callback);
   void SetAddressChangeCallback(AddressChangeCallback callback);
   void SetTitleChangeCallback(TitleChangeCallback callback);
+  void SetLoadStateChangeCallback(LoadStateChangeCallback callback);
+  void SetLoadErrorCallback(LoadErrorCallback callback);
   void Resize(BrowserViewRect view_rect, double device_scale_factor);
   void Navigate(const std::string& url);
   void Reload();
@@ -123,6 +128,8 @@ class BrowserService final : public BrowserClient::Delegate {
   PopupRequestCallback popup_request_callback_;
   AddressChangeCallback address_change_callback_;
   TitleChangeCallback title_change_callback_;
+  LoadStateChangeCallback load_state_change_callback_;
+  LoadErrorCallback load_error_callback_;
   std::string address_;
   std::string title_;
   std::string last_error_;

@@ -6,6 +6,7 @@
 !src/
 !tests/
 !scripts/
+!embedding_demo/
 
 # Documentation
 !README.md

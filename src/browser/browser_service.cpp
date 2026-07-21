@@ -134,6 +134,17 @@ void BrowserService::SetTitleChangeCallback(TitleChangeCallback callback) {
   title_change_callback_ = std::move(callback);
 }
 
+void BrowserService::SetLoadStateChangeCallback(
+    LoadStateChangeCallback callback) {
+  DiagnosticLog("BrowserService::SetLoadStateChangeCallback");
+  load_state_change_callback_ = std::move(callback);
+}
+
+void BrowserService::SetLoadErrorCallback(LoadErrorCallback callback) {
+  DiagnosticLog("BrowserService::SetLoadErrorCallback");
+  load_error_callback_ = std::move(callback);
+}
+
 void BrowserService::Resize(BrowserViewRect view_rect,
                              double device_scale_factor) {
   static std::atomic<int> resize_count{0};
@@ -158,6 +169,7 @@ void BrowserService::Navigate(const std::string& url) {
   DiagnosticLog("BrowserService::Navigate url=[" + url +
                 "] has_browser=" + (browser_ ? "true" : "false"));
   address_ = url;
+  last_error_.clear();
   if (address_change_callback_) {
     address_change_callback_(address_);
   }
@@ -442,6 +454,9 @@ void BrowserService::OnLoadStateChanged(bool is_loading,
   is_loading_ = is_loading;
   can_go_back_ = can_go_back;
   can_go_forward_ = can_go_forward;
+  if (load_state_change_callback_) {
+    load_state_change_callback_(is_loading, can_go_back, can_go_forward);
+  }
 }
 
 void BrowserService::OnAddressChanged(const std::string& url) {
@@ -463,6 +478,9 @@ void BrowserService::OnTitleChanged(const std::string& title) {
 void BrowserService::OnLoadErrorText(const std::string& error_text) {
   DiagnosticLog("BrowserService::OnLoadErrorText error=[" + error_text + "]");
   last_error_ = error_text;
+  if (load_error_callback_) {
+    load_error_callback_(error_text);
+  }
 }
 
 void BrowserService::OnRenderProcessTerminated() {

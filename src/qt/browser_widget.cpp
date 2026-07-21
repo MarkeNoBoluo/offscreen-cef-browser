@@ -178,6 +178,12 @@ void BrowserWidget::SetImeHandler(BrowserImeHandler* handler) {
   ime_handler_ = handler;
   DiagnosticLog("BrowserWidget::SetImeHandler handler=" +
                 HexValue(reinterpret_cast<uintptr_t>(handler)));
+  if (ime_handler_) {
+    // The IMM context belongs to this native browser widget. It must not be
+    // rebound to msg->hwnd because Qt may deliver an IME message through an
+    // ancestor window.
+    ime_handler_->SetWindowHandle(reinterpret_cast<HWND>(winId()));
+  }
 }
 
 void BrowserWidget::OnImeCompositionRangeChanged(
@@ -302,10 +308,6 @@ void BrowserWidget::SetCefCursor(int cursor_type, HCURSOR cursor_handle) {
 
 bool BrowserWidget::HandleImeNativeMessage(MSG* windows_message,
                                            long* result) {
-  if (ime_handler_) {
-    ime_handler_->SetWindowHandle(windows_message->hwnd);
-  }
-
   switch (windows_message->message) {
     case WM_INPUTLANGCHANGE:
       DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_INPUTLANGCHANGE wParam=" +

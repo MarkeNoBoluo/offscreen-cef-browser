@@ -1,9 +1,12 @@
 #include "browser/tab_manager.h"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QMetaObject>
 #include <QPointer>
 #include <QTimer>
+
+#include <sstream>
 
 #include "app/diagnostic_log.h"
 #include "browser/browser_ime_handler.h"
@@ -11,6 +14,33 @@
 #include "qt/browser_widget.h"
 
 namespace offscreen {
+
+namespace {
+
+bool IsSameOrChild(HWND parent, HWND window) {
+    return parent && window &&
+           (parent == window || ::IsChild(parent, window));
+}
+
+bool IsImeMessage(UINT message) {
+    switch (message) {
+        case WM_INPUTLANGCHANGE:
+        case WM_IME_SETCONTEXT:
+        case WM_IME_STARTCOMPOSITION:
+        case WM_IME_COMPOSITION:
+        case WM_IME_ENDCOMPOSITION:
+        case WM_IME_CHAR:
+        case WM_IME_NOTIFY:
+        case WM_IME_CONTROL:
+        case WM_IME_COMPOSITIONFULL:
+        case WM_IME_SELECT:
+            return true;
+        default:
+            return false;
+    }
+}
+
+}  // namespace
 
 TabManager::TabManager(QObject* parent) : QObject(parent) {
     DiagnosticLog("TabManager constructed");
@@ -194,33 +224,69 @@ int TabManager::tab_count() const {
 
 bool TabManager::nativeEventFilter(const QByteArray& eventType, void* message,
                                    long* result) {
-    if (eventType != "windows_generic_MSG") return false;
-    MSG* msg = static_cast<MSG*>(message);
-
-    switch (msg->message) {
-        case WM_INPUTLANGCHANGE:
-        case WM_IME_SETCONTEXT:
-        case WM_IME_STARTCOMPOSITION:
-        case WM_IME_COMPOSITION:
-        case WM_IME_ENDCOMPOSITION:
-        case WM_IME_CHAR:
-        case WM_IME_NOTIFY:
-        case WM_IME_CONTROL:
-        case WM_IME_COMPOSITIONFULL:
-        case WM_IME_SELECT:
-            break;
-        default:
-            return false;
+    if (eventType != "windows_generic_MSG" &&
+        eventType != "windows_dispatcher_MSG") {
+        return false;
     }
+    MSG* msg = static_cast<MSG*>(message);
+    if (!IsImeMessage(msg->message)) return false;
 
     BrowserWidget* w = ActiveBrowserWidget();
-    if (!w) return false;
-
     const HWND msg_hwnd = msg->hwnd;
-    const HWND widget_hwnd = reinterpret_cast<HWND>(w->winId());
-    if (msg_hwnd == widget_hwnd || ::IsChild(widget_hwnd, msg_hwnd)) {
+    const HWND browser_hwnd =
+        w ? reinterpret_cast<HWND>(w->winId()) : nullptr;
+    const HWND top_level_hwnd =
+        browser_hwnd ? ::GetAncestor(browser_hwnd, GA_ROOT) : nullptr;
+    QWidget* qt_focus_widget = QApplication::focusWidget();
+
+    const bool targets_browser = msg_hwnd == browser_hwnd;
+    const bool targets_browser_child = IsSameOrChild(browser_hwnd, msg_hwnd);
+    const bool targets_browser_ancestor =
+        IsSameOrChild(msg_hwnd, browser_hwnd);
+    const bool targets_top_level = msg_hwnd == top_level_hwnd;
+    const bool qt_focus_in_browser =
+        w && qt_focus_widget &&
+        (qt_focus_widget == w || w->isAncestorOf(qt_focus_widget));
+    const bool route_directly = targets_browser || targets_browser_child;
+    const bool route_from_ancestor =
+        targets_browser_ancestor && qt_focus_in_browser;
+
+    std::ostringstream stream;
+    stream << "TabManager::nativeEventFilter event_type=["
+           << eventType.constData() << "] message="
+           << HexValue(static_cast<uintptr_t>(msg->message))
+           << " msg_hwnd="
+           << HexValue(reinterpret_cast<uintptr_t>(msg_hwnd))
+           << " browser_hwnd="
+           << HexValue(reinterpret_cast<uintptr_t>(browser_hwnd))
+           << " top_level_hwnd="
+           << HexValue(reinterpret_cast<uintptr_t>(top_level_hwnd))
+           << " qt_focus_widget="
+           << HexValue(reinterpret_cast<uintptr_t>(qt_focus_widget))
+           << " targets_browser=" << (targets_browser ? "true" : "false")
+           << " targets_browser_child="
+           << (targets_browser_child ? "true" : "false")
+           << " targets_browser_ancestor="
+           << (targets_browser_ancestor ? "true" : "false")
+           << " targets_top_level="
+           << (targets_top_level ? "true" : "false")
+           << " qt_focus_in_browser="
+           << (qt_focus_in_browser ? "true" : "false");
+
+    if (!w) {
+        stream << " route=reject_no_active_browser";
+        DiagnosticLog(stream.str());
+        return false;
+    }
+    if (route_directly || route_from_ancestor) {
+        stream << " route="
+               << (route_directly ? "browser_or_child" : "browser_ancestor");
+        DiagnosticLog(stream.str());
         return w->HandleImeNativeMessage(msg, result);
     }
+
+    stream << " route=reject_window_mismatch";
+    DiagnosticLog(stream.str());
     return false;
 }
 

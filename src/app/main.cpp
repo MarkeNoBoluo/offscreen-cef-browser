@@ -1,6 +1,3 @@
-#include <algorithm>
-#include <atomic>
-#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -17,7 +14,6 @@
 #include <QPushButton>
 #include <QString>
 #include <QTabWidget>
-#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -29,7 +25,7 @@
 #include "app/diagnostic_log.h"
 #include "browser/browser_service.h"
 #include "browser/tab_manager.h"
-#include "include/cef_app.h"
+#include "offscreen_cef/cef_runtime.h"
 #include "qt/browser_widget.h"
 
 namespace {
@@ -69,11 +65,6 @@ bool TryNormalizeAddressBarUrl(const QString& input, QString* normalized_url) {
 
   *normalized_url = url.toString(QUrl::FullyEncoded);
   return true;
-}
-
-void AssignCefString(cef_string_t* cef_string, const QString& value) {
-  cef_string_set(reinterpret_cast<const cef_char_t*>(value.utf16()),
-                 static_cast<size_t>(value.size()), cef_string, true);
 }
 
 class TabbedBrowserWindow final : public QMainWindow {
@@ -277,71 +268,33 @@ void TabbedBrowserWindow::OnUrlBarReturnPressed() {
 int main(int argc, char* argv[]) {
   offscreen::SetDiagnosticLogFileToApplicationDirectory();
   offscreen::DiagnosticLog("main entered");
-  CefEnableHighDPISupport();
-
-  CefMainArgs main_args(::GetModuleHandleW(nullptr));
-
-  CefRefPtr<offscreen::BrowserApp> cef_app(new offscreen::BrowserApp());
-
-  const int exit_code = CefExecuteProcess(main_args, cef_app.get(), nullptr);
-  if (exit_code >= 0) {
-    offscreen::DiagnosticLog("CefExecuteProcess handled subprocess exit_code=" +
-                             std::to_string(exit_code));
-    return exit_code;
+  if (const auto exit_code = offscreen::CefRuntime::ExecuteSubprocess(
+          ::GetModuleHandleW(nullptr))) {
+    offscreen::DiagnosticLog("CefRuntime::ExecuteSubprocess handled exit_code=" +
+                             std::to_string(*exit_code));
+    return *exit_code;
   }
-  offscreen::DiagnosticLog("CefExecuteProcess returned browser-process path");
 
   QApplication qt_app(argc, argv);
-  QObject message_pump_context;
-  cef_app->SetMessagePumpScheduler([&message_pump_context](int64_t delay_ms) {
-    const int64_t bounded_delay =
-        std::min(std::max<int64_t>(delay_ms, 0),
-                 static_cast<int64_t>(std::numeric_limits<int>::max()));
-    QTimer::singleShot(static_cast<int>(bounded_delay), &message_pump_context,
-                       []() { CefDoMessageLoopWork(); });
-  });
 
   const offscreen::AppConfig app_config =
       offscreen::AppConfig::FromArgs(argc, argv);
   offscreen::DiagnosticLog("AppConfig initial_url=[" + app_config.initial_url +
                            "]");
 
-  offscreen::DiagnosticLog("Resolving runtime paths");
   const QString app_dir = QCoreApplication::applicationDirPath();
-  const QString subprocess_path =
-      NativePath(QDir(app_dir).filePath("offscreen_cef_subprocess.exe"));
-  const QString cache_path = NativePath(QDir(app_dir).filePath("cef_cache"));
-  const QString log_path = NativePath(QDir(app_dir).filePath("cef.log"));
-
-  CefSettings settings;
-  settings.no_sandbox = true;
-  settings.external_message_pump = true;
-  settings.windowless_rendering_enabled = true;
-  AssignCefString(&settings.browser_subprocess_path, subprocess_path);
-  AssignCefString(&settings.cache_path, cache_path);
-  AssignCefString(&settings.log_file, log_path);
-
-  {
-    std::ostringstream stream;
-    stream << "CefSettings no_sandbox=" << settings.no_sandbox
-           << " external_message_pump=" << settings.external_message_pump
-           << " windowless_rendering_enabled="
-           << settings.windowless_rendering_enabled;
-    offscreen::DiagnosticLog(stream.str());
-  }
-
-  if (!CefInitialize(main_args, settings, cef_app.get(), nullptr)) {
-    offscreen::DiagnosticLog("CefInitialize failed");
+  offscreen::CefRuntime runtime;
+  offscreen::CefRuntimeOptions runtime_options;
+  runtime_options.subprocess_path = NativePath(
+      QDir(app_dir).filePath("offscreen_cef_subprocess.exe")).toStdWString();
+  runtime_options.cache_path =
+      NativePath(QDir(app_dir).filePath("cef_cache")).toStdWString();
+  runtime_options.log_path =
+      NativePath(QDir(app_dir).filePath("cef.log")).toStdWString();
+  if (!runtime.Initialize(runtime_options)) {
+    offscreen::DiagnosticLog("CefRuntime::Initialize failed");
     return 1;
   }
-  offscreen::DiagnosticLog("CefInitialize succeeded");
-
-  QTimer cef_work_timer;
-  cef_work_timer.setInterval(10);
-  QObject::connect(&cef_work_timer, &QTimer::timeout, []() {
-    CefDoMessageLoopWork();
-  });
-  cef_work_timer.start();
 
   TabbedBrowserWindow main_window;
   main_window.SetDefaultNewTabUrl(app_config.initial_url);
@@ -360,7 +313,9 @@ int main(int argc, char* argv[]) {
   offscreen::DiagnosticLog("Qt event loop exited result=" +
                            std::to_string(result));
 
-  CefShutdown();
-  offscreen::DiagnosticLog("CefShutdown completed");
+  if (!runtime.Shutdown()) {
+    offscreen::DiagnosticLog("CefRuntime::Shutdown deferred: browser still open");
+    return 1;
+  }
   return result;
 }

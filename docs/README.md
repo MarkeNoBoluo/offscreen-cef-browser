@@ -1,6 +1,6 @@
 # 文档总览
 
-本文档集面向”用 C++ + CEF + Qt Widgets 开发离屏渲染浏览器”的设计与实现。V1 主要支持 Qt 5.14.2 MSVC2017 64bit。调研日期为 2026-07-16，代码实现已完成 V2.5.1（多 Tab 页浏览）。
+本文档集面向”用 C++ + CEF + Qt Widgets 开发离屏渲染浏览器”的设计与实现。当前构建使用 Qt 5.14.2 MSVC2017 32bit。调研日期为 2026-07-16，代码实现已完成 V2.5.1（多 Tab 页浏览）。
 
 ## 阅读顺序
 
@@ -17,7 +17,7 @@
 - Qt 侧首版建议使用 QWidget + QImage/QPainter，先降低 CEF 集成风险；性能瓶颈明确后再引入 QOpenGLWidget。
 - 高 DPI、输入法、弹窗、焦点和关闭生命周期不是附加项，必须进入首个可用版本的验收。
 - 目标可视化设计系统最低按 Chromium 90+，推荐 Chromium 100+，最佳 Chromium 120+；同时必须启用 JavaScript、LocalStorage、Canvas、HTML5 Video、Cookie、XHR/Fetch、WebSocket 和常见设计器输入能力。
-- 版本路线分两版推进：V1 仅实现 Windows x64（`windows64`/`win64`）+ Qt 5.14.2 MSVC2017 64bit；V2 再根据情况评估 Qt 6.9.3、`win32` 和 `linux-amd64`；不考虑 macOS。
+- 当前构建固定为 Windows x86（`windows32_minimal`）+ Qt 5.14.2 MSVC2017 32bit；CEF、Qt、MSVC2017 工具链和 CMake 生成器必须全部使用 x86，不能混用 64 位库；不考虑 macOS。
 
 ## 术语
 

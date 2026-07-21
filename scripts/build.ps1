@@ -1,8 +1,10 @@
 param(
-  [string]$CefRoot = "D:\Git\cef_binary_96.0.18+gfe551e4+chromium-96.0.4664.110_windows64_vs2017",
-  [string]$BuildDir = "build\v1-cef96-msvc2017-x64",
+  [ValidateSet("Win32", "x64")]
+  [string]$Architecture = "Win32",
+  [string]$CefRoot = "",
+  [string]$BuildDir = "",
   [ValidateSet("Debug", "Release")]
-  [string]$Configuration = "Debug",
+  [string]$Configuration = "Release",
   [string]$QtPrefix = ""
 )
 
@@ -39,16 +41,23 @@ function Require-Path {
 }
 
 function Get-QtPrefix {
-  param([string]$ExplicitQtPrefix)
+  param(
+    [string]$ExplicitQtPrefix,
+    [string]$QtPackage
+  )
 
   if ($ExplicitQtPrefix) {
     Require-Path $ExplicitQtPrefix "Qt prefix"
-    return (Resolve-Path -LiteralPath $ExplicitQtPrefix).Path
+    $resolvedPrefix = (Resolve-Path -LiteralPath $ExplicitQtPrefix).Path
+    if ((Split-Path -Leaf $resolvedPrefix) -ne $QtPackage) {
+      throw "Qt prefix must be Qt 5.14.2 ${QtPackage}: $resolvedPrefix"
+    }
+    return $resolvedPrefix
   }
 
   $qmakePaths = @(where.exe qmake 2>$null)
   if ($qmakePaths.Count -eq 0) {
-    throw "qmake.exe was not found in PATH. Add Qt 5.14.2 msvc2017_64 bin to PATH or pass -QtPrefix."
+    throw "qmake.exe was not found in PATH. Add Qt 5.14.2 $QtPackage bin to PATH or pass -QtPrefix."
   }
 
   foreach ($qmakePath in $qmakePaths) {
@@ -61,12 +70,12 @@ function Get-QtPrefix {
     if ($LASTEXITCODE -ne 0) {
       continue
     }
-    if ($prefix -match "msvc2017_64") {
+    if ((Split-Path -Leaf $prefix) -eq $QtPackage) {
       return $prefix
     }
   }
 
-  throw "Qt 5.14.2 msvc2017_64 qmake was not found in PATH. Add it to PATH or pass -QtPrefix."
+  throw "Qt 5.14.2 $QtPackage qmake was not found in PATH. Add it to PATH or pass -QtPrefix."
 }
 
 function Assert-VS2017GeneratorAvailable {
@@ -78,18 +87,35 @@ function Assert-VS2017GeneratorAvailable {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDir "..")).Path
+$cefVersion = "96.0.18+gfe551e4+chromium-96.0.4664.110"
+if ($Architecture -eq "x64") {
+  $cefDistribution = "windows64_vs2017"
+  $qtPackage = "msvc2017_64"
+  $outputArchitecture = "x64"
+} else {
+  $cefDistribution = "windows32_minimal"
+  $qtPackage = "msvc2017"
+  $outputArchitecture = "x86"
+}
+if (-not $CefRoot) {
+  $CefRoot = "D:\Git\cef_binary_${cefVersion}_${cefDistribution}"
+}
+if (-not $BuildDir) {
+  $BuildDir = "build\cef96-msvc2017-${outputArchitecture}"
+}
 $buildPath = Join-Path $repoRoot $BuildDir
 
 Write-Step "Validating prerequisites"
 Require-Path $CefRoot "CEF root"
 Require-Path (Join-Path $CefRoot "cmake\FindCEF.cmake") "CEF CMake package"
 Require-Path (Join-Path $CefRoot "include\cef_version.h") "CEF headers"
-$resolvedQtPrefix = Get-QtPrefix $QtPrefix
+$resolvedQtPrefix = Get-QtPrefix $QtPrefix $qtPackage
 $qt5Dir = Join-Path $resolvedQtPrefix "lib\cmake\Qt5"
 Require-Path $qt5Dir "Qt5 CMake package"
 Assert-VS2017GeneratorAvailable
 
 Write-Host "CEF_ROOT: $CefRoot"
+Write-Host "Architecture: $Architecture"
 Write-Host "Qt prefix: $resolvedQtPrefix"
 Write-Host "Qt5_DIR: $qt5Dir"
 Write-Host "Build dir: $buildPath"
@@ -100,7 +126,7 @@ Invoke-Checked "cmake" @(
   "-S", $repoRoot,
   "-B", $buildPath,
   "-G", "Visual Studio 15 2017",
-  "-A", "x64",
+  "-A", $Architecture,
   "-DCEF_ROOT=$CefRoot",
   "-DQt5_DIR=$qt5Dir",
   "-DOFFSCREEN_BUILD_APP=ON",
@@ -111,7 +137,7 @@ Write-Step "Building targets"
 Invoke-Checked "cmake" @(
   "--build", $buildPath,
   "--config", $Configuration,
-  "--target", "offscreen_core_tests", "offscreen_cef_browser", "offscreen_cef_subprocess"
+  "--target", "offscreen_core_tests", "offscreen_cef_browser", "offscreen_cef_subprocess", "embedding_demo_webview", "embedding_demo_tabbed_browser"
 )
 
 Write-Step "Running tests"

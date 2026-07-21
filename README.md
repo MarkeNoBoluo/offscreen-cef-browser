@@ -1,8 +1,8 @@
 # Offscreen CEF Browser
 
-基于 Chromium Embedded Framework (CEF 96) + Qt 5.14.2 的离屏渲染浏览器，支持多 Tab 页浏览。
+基于 Chromium Embedded Framework (CEF 96) + Qt 5.14.2 的离屏渲染浏览器，支持多 Tab 页浏览，也可作为模块嵌入其他 Qt GUI 程序。
 
-当前已完成 V2.5.1，实现了完整的 OSR 渲染、输入事件转发、中文输入法支持及多 Tab 页管理。
+当前已完成 V2.5.1，实现了完整的 OSR 渲染、输入事件转发、中文输入法支持及多 Tab 页管理。当前工作区另提供 `CefRuntime`、`CefWebView` 与 `CefTabbedBrowser`，用于复用浏览器运行时、全屏 WebView 和多 Tab 容器。
 
 ## 版本历史
 
@@ -17,7 +17,7 @@
 
 ## 构建
 
-**前置条件：** CMake 3.21+、VS2017 x64、CEF 96 (`windows64_vs2017`)、Qt 5.14.2 (`msvc2017_64`)。
+**前置条件：** CMake 3.21+、VS2017，以及与目标架构一致的 CEF 96 和 Qt 5.14.2：Win32 使用 `windows32_minimal` + `msvc2017`，x64 使用 `windows64_vs2017` + `msvc2017_64`。
 
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File "scripts\build.ps1"
@@ -29,23 +29,34 @@ PowerShell -ExecutionPolicy Bypass -File "scripts\build.ps1"
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `-CefRoot` | `D:\Git\cef_binary_96.0.18+gfe551e4+chromium-96.0.4664.110_windows64_vs2017` | CEF binary distribution 路径 |
-| `-QtPrefix` | 自动从 PATH 查找 `qmake` | Qt 5.14.2 msvc2017_64 前缀 |
-| `-Configuration` | `Debug` | `Debug` 或 `Release` |
+| `-Architecture` | `Win32` | `Win32` 或 `x64`；同时选择匹配的默认 CEF、Qt 与 CMake 平台 |
+| `-CefRoot` | 由 `-Architecture` 推导 | CEF binary distribution 路径；覆盖时仍必须与目标架构一致 |
+| `-QtPrefix` | 自动从 PATH 查找 `qmake` | Win32 使用 Qt 5.14.2 `msvc2017`，x64 使用 `msvc2017_64` |
+| `-Configuration` | `Release` | `Debug` 或 `Release` |
+
+构建 x64：
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File "scripts\build.ps1" -Architecture x64 -QtPrefix "D:\IDE\QT5.14.2\5.14.2\msvc2017_64"
+```
 
 ## 架构
 
-两个可执行文件共享一个静态库：
+浏览器演示程序、CEF 子进程和可复用静态库的职责如下：
 
 | 目标 | 角色 |
 | --- | --- |
-| `offscreen_cef_browser` | Qt GUI + CEF 浏览器进程，链接 `offscreen_core`、`Qt5::Widgets`、`libcef_lib`、`libcef_dll_wrapper` |
-| `offscreen_cef_subprocess` | CEF 子进程入口，仅链接 CEF 库 |
+| `offscreen_cef_browser` | 现有 Qt 浏览器演示程序，也是 CEF browser process |
+| `offscreen_cef_subprocess` | CEF renderer/GPU/utility 子进程入口 |
+| `offscreen_cef_runtime` (静态库) | `CefRuntime`、`BrowserApp`、CEF 初始化、external message pump、IME 原生消息路由 |
+| `offscreen_cef_widgets` (静态库) | `CefWebView`、`CefTabbedBrowser`、OSR 绘制、输入、IME、浏览器与 Tab 管理 |
 | `offscreen_core` (静态库) | 共享逻辑：`AppConfig`、输入映射、IME 核心、几何、绘制几何、关闭状态、窗口标题，无 Qt/CEF 依赖 |
+
+宿主程序通过 `offscreen_cef::widgets` 链接组件，并调用 `offscreen_cef_deploy(host_app)` 部署 CEF runtime、resources 和 `offscreen_cef_subprocess.exe`。完整示例见 [docs/embedding.md](docs/embedding.md)。
 
 ### 启动链路
 
-`main()` → `CefExecuteProcess` → `CefInitialize` (external message pump) → `QApplication` → 10ms `CefDoMessageLoopWork` 定时器 → `BrowserService::CreateBrowser` (Alloy style, `SetAsWindowless`) → `QApplication::exec()` → 关闭 → `CefShutdown`
+`CefRuntime::ExecuteSubprocess` → `QApplication` → `CefRuntime::Initialize` (external message pump) → `CefBrowserHost::CreateBrowser` (Alloy style, `SetAsWindowless`) → `QApplication::exec()` → 所有 browser 关闭 → `CefRuntime::Shutdown`
 
 ### OSR 渲染链路
 
@@ -76,7 +87,9 @@ offscreen-cef-browser/
     browser/                  # 核心：BrowserService, BrowserClient, OsrRenderHandler,
                               #       TabManager, BrowserImeCore/Handler,
                               #       BrowserFrame, input_mapping, geometry, close_state
-    qt/                       # Qt 集成：BrowserWidget (绘制、输入、IME、nativeEvent)
+    offscreen_cef/            # 宿主公开 API：CefRuntime, CefWebView, CefTabbedBrowser
+    qt/                       # Qt 集成：BrowserWidget、CefWebView、CefTabbedBrowser
+    runtime/                  # 进程级 CEF 生命周期与 IME 原生消息路由
     subprocess/               # CEF 子进程入口
   tests/                      # 7 个测试可执行文件 + test_input_page.html
   docs/                       # 调研、架构、实现计划
@@ -88,6 +101,8 @@ offscreen-cef-browser/
 - CEF 96 + Alloy style 是 OSR/windowless 模式的硬性要求。浏览器创建时设置 `windowless_frame_rate=30`。
 - DPI 坐标规则：`GetViewRect` 返回 DIP；`OnPaint` buffer 尺寸是物理像素；`device_scale_factor` 必须等于 `devicePixelRatioF()`；脏矩形需从物理像素转 DIP 再调用 `QWidget::update()`。
 - `BrowserFrame` 使用 `std::mutex` —— `Snapshot()` 返回深拷贝供 Qt 线程使用。
+- 一个宿主进程只能创建一个 `CefRuntime`；必须在 `QApplication` 前执行 `CefRuntime::ExecuteSubprocess()`。
+- 关闭时先关闭全部 `CefWebView`，确认 `CefRuntime::AllBrowsersClosed()` 后才能调用 `CefRuntime::Shutdown()`。
 - 测试仅链接 `offscreen_core`（无 Qt/CEF 依赖），通过 CTest 运行。
 
 ## 文档索引
@@ -97,14 +112,15 @@ offscreen-cef-browser/
 - [docs/architecture.md](docs/architecture.md) — 架构、线程模型、渲染与输入链路
 - [docs/implementation-plan.md](docs/implementation-plan.md) — 分阶段开发计划与验收标准
 - [docs/visualization-system-compatibility.md](docs/visualization-system-compatibility.md) — 可视化设计系统兼容性要求
+- [docs/embedding.md](docs/embedding.md) — 将 Runtime、单页 WebView 或多 Tab 组件嵌入宿主 Qt 程序
 
 ## 技术栈
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| CEF | 96.0.18 (Chromium 96) | `windows64_vs2017`，Alloy style，OSR windowless |
-| Qt | 5.14.2 | `msvc2017_64`，Widgets 模块 |
-| 编译器 | MSVC 2017 (19.1x) | x64，`/MT` 或 `/MTd` 静态运行时 |
+| CEF | 96.0.18 (Chromium 96) | Win32: `windows32_minimal`; x64: `windows64_vs2017`；Alloy style，OSR windowless |
+| Qt | 5.14.2 | Win32: `msvc2017`; x64: `msvc2017_64`；Widgets 模块 |
+| 编译器 | MSVC 2017 (19.1x) | Win32/x86 或 x64，必须与 CEF、Qt 和 CMake 平台一致；`/MT` 或 `/MTd` 静态运行时 |
 | CMake | 3.21+ | Visual Studio 15 2017 generator |
 | C++ 标准 | C++17 | |
 
