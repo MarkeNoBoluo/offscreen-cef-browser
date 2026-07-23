@@ -87,9 +87,9 @@ function Assert-VS2017GeneratorAvailable {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDir "..")).Path
-$cefVersion = "96.0.18+gfe551e4+chromium-96.0.4664.110"
+$cefVersion = "98.0.0+g2f5e1b6+chromium-98.0.4758.0"
 if ($Architecture -eq "x64") {
-  $cefDistribution = "windows64_vs2017"
+  $cefDistribution = "windows64"
   $qtPackage = "msvc2017_64"
   $outputArchitecture = "x64"
 } else {
@@ -101,7 +101,7 @@ if (-not $CefRoot) {
   $CefRoot = "D:\Git\cef_binary_${cefVersion}_${cefDistribution}"
 }
 if (-not $BuildDir) {
-  $BuildDir = "build\cef96-msvc2017-${outputArchitecture}"
+  $BuildDir = "build\cef98-msvc2017-${outputArchitecture}"
 }
 $buildPath = Join-Path $repoRoot $BuildDir
 
