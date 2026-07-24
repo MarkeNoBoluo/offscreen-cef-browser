@@ -1,6 +1,6 @@
 # Offscreen CEF Browser
 
-基于 Chromium Embedded Framework (CEF 96) + Qt 5.14.2 的离屏渲染浏览器，支持多 Tab 页浏览，也可作为模块嵌入其他 Qt GUI 程序。
+基于 Chromium Embedded Framework (CEF 98) + Qt 5.14.2 的离屏渲染浏览器，支持多 Tab 页浏览，也可作为模块嵌入其他 Qt GUI 程序。
 
 当前已完成 V2.5.1，实现了完整的 OSR 渲染、输入事件转发、中文输入法支持及多 Tab 页管理。当前工作区另提供 `CefRuntime`、`CefWebView` 与 `CefTabbedBrowser`，用于复用浏览器运行时、全屏 WebView 和多 Tab 容器。
 
@@ -17,7 +17,7 @@
 
 ## 构建
 
-**前置条件：** CMake 3.21+、VS2017，以及与目标架构一致的 CEF 96 和 Qt 5.14.2：Win32 使用 `windows32_minimal` + `msvc2017`，x64 使用 `windows64_vs2017` + `msvc2017_64`。
+**前置条件：** CMake 3.21+、VS2017，以及与目标架构一致的 CEF 98 和 Qt 5.14.2：Win32 使用 `windows32_minimal` + `msvc2017`，x64 使用 `windows64` + `msvc2017_64`。
 
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File "scripts\build.ps1"
@@ -98,7 +98,7 @@ offscreen-cef-browser/
 ## 关键约束
 
 - Debug 构建必须定义 `_HAS_ITERATOR_DEBUGGING=0`，避免 Qt Debug DLL 与 MSVC 迭代器调试的 ABI 不兼容（否则 `QString::toStdString()` 崩溃）。
-- CEF 96 + Alloy style 是 OSR/windowless 模式的硬性要求。浏览器创建时设置 `windowless_frame_rate=30`。
+- CEF 98 + Alloy style 是 OSR/windowless 模式的硬性要求。浏览器创建时设置 `windowless_frame_rate=30`。
 - DPI 坐标规则：`GetViewRect` 返回 DIP；`OnPaint` buffer 尺寸是物理像素；`device_scale_factor` 必须等于 `devicePixelRatioF()`；脏矩形需从物理像素转 DIP 再调用 `QWidget::update()`。
 - `BrowserFrame` 使用 `std::mutex` —— `Snapshot()` 返回深拷贝供 Qt 线程使用。
 - 一个宿主进程只能创建一个 `CefRuntime`；必须在 `QApplication` 前执行 `CefRuntime::ExecuteSubprocess()`。
@@ -118,7 +118,7 @@ offscreen-cef-browser/
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| CEF | 96.0.18 (Chromium 96) | Win32: `windows32_minimal`; x64: `windows64_vs2017`；Alloy style，OSR windowless |
+| CEF | 98.0.0+g2f5e1b6+chromium-98.0.4758.0 (Chromium 98.0.4758.0) | Win32: `windows32_minimal`; x64: `windows64`；Alloy style，OSR windowless |
 | Qt | 5.14.2 | Win32: `msvc2017`; x64: `msvc2017_64`；Widgets 模块 |
 | 编译器 | MSVC 2017 (19.1x) | Win32/x86 或 x64，必须与 CEF、Qt 和 CMake 平台一致；`/MT` 或 `/MTd` 静态运行时 |
 | CMake | 3.21+ | Visual Studio 15 2017 generator |
