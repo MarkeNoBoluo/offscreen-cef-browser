@@ -13,19 +13,31 @@ namespace offscreen {
 
 namespace {
 
+/// 判断消息是否为带 Alt 语义的 Win32 系统键消息。
+/// @param message Win32 消息编号。
+/// @return 系统键消息时为 true。
 bool IsWindowsSystemKeyMessage(uint32_t message) {
   return message == WM_SYSCHAR || message == WM_SYSKEYDOWN ||
          message == WM_SYSKEYUP;
 }
 
+/// 判断消息是否表示按键按下。
+/// @param message Win32 消息编号。
+/// @return 按下消息时为 true。
 bool IsWindowsKeyDownMessage(uint32_t message) {
   return message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
 }
 
+/// 判断消息是否表示按键抬起。
+/// @param message Win32 消息编号。
+/// @return 抬起消息时为 true。
 bool IsWindowsKeyUpMessage(uint32_t message) {
   return message == WM_KEYUP || message == WM_SYSKEYUP;
 }
 
+/// 判断消息是否携带可提交字符。
+/// @param message Win32 消息编号。
+/// @return 字符消息时为 true。
 bool IsWindowsCharMessage(uint32_t message) {
   return message == WM_CHAR || message == WM_SYSCHAR;
 }

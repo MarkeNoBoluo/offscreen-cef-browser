@@ -11,8 +11,10 @@
 
 namespace {
 
+/// 演示 CefWebView 嵌入单个 Qt 主窗口，并等待 CEF 异步关闭。
 class WebViewDemoWindow final : public QMainWindow {
  public:
+  /// 创建单网页演示窗口并连接标题和关闭信号。
   WebViewDemoWindow() {
     setWindowTitle(QStringLiteral("CEF WebView Embedding Demo"));
     resize(1024, 768);
@@ -32,9 +34,13 @@ class WebViewDemoWindow final : public QMainWindow {
             });
   }
 
+  /// 加载演示页面。
+  /// @param url 要加载的绝对地址。
   void LoadInitialUrl(const QUrl& url) { view_->LoadUrl(url); }
 
  protected:
+  /// 首次关闭时请求 CEF 关闭，收到 browserClosed 后才允许窗口退出。
+  /// @param event Qt 关闭事件。
   void closeEvent(QCloseEvent* event) override {
     if (!close_allowed_) {
       view_->CloseBrowser();
@@ -51,6 +57,10 @@ class WebViewDemoWindow final : public QMainWindow {
 
 }  // namespace
 
+/// 启动单网页嵌入演示。
+/// @param argc 进程参数个数。
+/// @param argv 进程参数数组。
+/// @return CEF 子进程退出码、Qt 事件循环结果或失败码。
 int main(int argc, char* argv[]) {
   if (const auto exit_code = offscreen::CefRuntime::ExecuteSubprocess(
           ::GetModuleHandleW(nullptr))) {
@@ -65,7 +75,7 @@ int main(int argc, char* argv[]) {
 
   WebViewDemoWindow window;
   window.show();
-  window.LoadInitialUrl(QUrl(QStringLiteral("https://example.com/")));
+  window.LoadInitialUrl(QUrl(QStringLiteral("http://192.168.42.116")));
 
   const int result = app.exec();
   return runtime.Shutdown() ? result : 1;

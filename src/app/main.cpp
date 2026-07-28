@@ -30,19 +30,32 @@
 
 namespace {
 
+/// 将 Qt 路径转换为 Windows 本地分隔符。
+/// @param path 原始 Qt 路径。
+/// @return 使用本地分隔符的路径。
 QString NativePath(const QString& path) {
   return QDir::toNativeSeparators(path);
 }
 
+/// 将 UTF-8 标准字符串转换为 QString。
+/// @param value UTF-8 文本。
+/// @return 对应 QString。
 QString StringToQString(const std::string& value) {
   return QString::fromUtf8(value.c_str(), static_cast<int>(value.size()));
 }
 
+/// 将 QString 编码为 UTF-8 标准字符串。
+/// @param value Qt 文本。
+/// @return UTF-8 文本。
 std::string QStringToUtf8(const QString& value) {
   const QByteArray bytes = value.toUtf8();
   return std::string(bytes.constData(), static_cast<size_t>(bytes.size()));
 }
 
+/// 校验地址栏输入并规范化为允许协议的完整 URL。
+/// @param input 用户输入文本。
+/// @param normalized_url 输出规范化地址。
+/// @return 输入有效时为 true。
 bool TryNormalizeAddressBarUrl(const QString& input, QString* normalized_url) {
   const QString trimmed = input.trimmed();
   if (trimmed.isEmpty()) {
@@ -67,26 +80,51 @@ bool TryNormalizeAddressBarUrl(const QString& input, QString* normalized_url) {
   return true;
 }
 
+/// 演示应用主窗口，负责地址栏、Qt 标签控件与 TabManager 的双向同步。
 class TabbedBrowserWindow final : public QMainWindow {
  public:
+  /// 创建主窗口和基础导航 UI。
+  /// @param parent Qt 父控件。
   explicit TabbedBrowserWindow(QWidget* parent = nullptr);
+  /// 连接标签管理器信号。
+  /// @param tm 进程唯一的标签管理器。
   void SetTabManager(offscreen::TabManager* tm);
+  /// 设置新建标签使用的默认地址。
+  /// @param url 有效的 UTF-8 地址。
   void SetDefaultNewTabUrl(std::string url);
 
  protected:
+  /// 在全部 CEF 标签关闭前阻止主窗口直接关闭。
+  /// @param event Qt 关闭事件。
   void closeEvent(QCloseEvent* event) override;
 
  private:
+  /// 将新建 BrowserWidget 插入 Qt 标签控件。
+  /// @param id 新标签标识。
+  /// @param w 新建浏览器控件。
+  /// @param title 初始标题。
   void OnTabCreated(offscreen::TabManager::TabId id,
                     offscreen::BrowserWidget* w,
                     const std::string& title);
+  /// 从 Qt 标签控件移除已清理标签。
+  /// @param id 已关闭标签标识。
   void OnTabClosed(offscreen::TabManager::TabId id);
+  /// 仅在变化标签为活动标签时刷新地址栏。
+  /// @param id 变化标签标识。
+  /// @param url 最新 UTF-8 地址。
   void OnTabAddressChanged(offscreen::TabManager::TabId id,
                            const std::string& url);
+  /// 更新标签文字并同步活动窗口标题。
+  /// @param id 变化标签标识。
+  /// @param title 最新 UTF-8 标题。
   void OnTabTitleChanged(offscreen::TabManager::TabId id,
                          const std::string& title);
+  /// 将 Qt 选中索引同步为活动浏览器标签。
+  /// @param index 新选中标签索引。
   void OnTabSwitched(int index);
+  /// 创建一个默认地址的新标签。
   void OnNewTabClicked();
+  /// 校验地址栏文本并导航当前标签或创建首个标签。
   void OnUrlBarReturnPressed();
 
   QTabWidget* tab_widget_ = nullptr;
@@ -95,6 +133,8 @@ class TabbedBrowserWindow final : public QMainWindow {
   std::string default_new_tab_url_ = "https://www.baidu.com";
 };
 
+/// 初始化主窗口布局、标签控件和地址栏事件连接。
+/// @param parent Qt 父控件。
 TabbedBrowserWindow::TabbedBrowserWindow(QWidget* parent)
     : QMainWindow(parent) {
   setWindowTitle(QStringLiteral("Offscreen CEF Browser"));
@@ -140,6 +180,8 @@ TabbedBrowserWindow::TabbedBrowserWindow(QWidget* parent)
   setCentralWidget(central);
 }
 
+/// 保存管理器并订阅标签状态信号。
+/// @param tm 进程唯一的标签管理器。
 void TabbedBrowserWindow::SetTabManager(offscreen::TabManager* tm) {
   tab_manager_ = tm;
   QObject::connect(tab_manager_, &offscreen::TabManager::TabCreated, this,
@@ -154,12 +196,16 @@ void TabbedBrowserWindow::SetTabManager(offscreen::TabManager* tm) {
                    [this]() { close(); });
 }
 
+/// 更新默认新标签地址，忽略空地址。
+/// @param url 新的 UTF-8 地址。
 void TabbedBrowserWindow::SetDefaultNewTabUrl(std::string url) {
   if (!url.empty()) {
     default_new_tab_url_ = std::move(url);
   }
 }
 
+/// 向 TabManager 请求异步关闭全部标签，避免 CEF 生命周期被截断。
+/// @param event Qt 关闭事件。
 void TabbedBrowserWindow::closeEvent(QCloseEvent* event) {
   if (tab_manager_ && !tab_manager_->all_closed()) {
     tab_manager_->ShutdownAll();
@@ -169,6 +215,10 @@ void TabbedBrowserWindow::closeEvent(QCloseEvent* event) {
   QMainWindow::closeEvent(event);
 }
 
+/// 将创建完成的浏览器控件加入并激活 Qt 标签页。
+/// @param id 新标签标识。
+/// @param w 浏览器控件。
+/// @param title 初始标题。
 void TabbedBrowserWindow::OnTabCreated(offscreen::TabManager::TabId id,
                                        offscreen::BrowserWidget* w,
                                        const std::string& title) {
@@ -177,6 +227,8 @@ void TabbedBrowserWindow::OnTabCreated(offscreen::TabManager::TabId id,
   tab_widget_->setCurrentIndex(index);
 }
 
+/// 查找并移除与标识匹配的 Qt 标签页。
+/// @param id 已关闭标签标识。
 void TabbedBrowserWindow::OnTabClosed(offscreen::TabManager::TabId id) {
   for (int i = 0; i < tab_widget_->count(); ++i) {
     auto* bw = qobject_cast<offscreen::BrowserWidget*>(tab_widget_->widget(i));
@@ -187,6 +239,9 @@ void TabbedBrowserWindow::OnTabClosed(offscreen::TabManager::TabId id) {
   }
 }
 
+/// 当活动标签地址变化且地址栏未编辑时更新显示。
+/// @param id 变化标签标识。
+/// @param url 最新 UTF-8 地址。
 void TabbedBrowserWindow::OnTabAddressChanged(
     offscreen::TabManager::TabId id, const std::string& url) {
   const auto* active_bw = qobject_cast<offscreen::BrowserWidget*>(
@@ -197,6 +252,9 @@ void TabbedBrowserWindow::OnTabAddressChanged(
   }
 }
 
+/// 更新标签文字，并在活动标签时更新窗口标题。
+/// @param id 变化标签标识。
+/// @param title 最新 UTF-8 标题。
 void TabbedBrowserWindow::OnTabTitleChanged(
     offscreen::TabManager::TabId id, const std::string& title) {
   for (int i = 0; i < tab_widget_->count(); ++i) {
@@ -214,6 +272,8 @@ void TabbedBrowserWindow::OnTabTitleChanged(
   }
 }
 
+/// 同步活动标签、地址栏、窗口标题和键盘焦点。
+/// @param index 新选中标签索引。
 void TabbedBrowserWindow::OnTabSwitched(int index) {
   auto* w = tab_widget_->widget(index);
   if (!w) return;
@@ -233,12 +293,14 @@ void TabbedBrowserWindow::OnTabSwitched(int index) {
   if (bw) bw->setFocus();
 }
 
+/// 响应新建标签按钮。
 void TabbedBrowserWindow::OnNewTabClicked() {
   if (tab_manager_) {
     tab_manager_->CreateTab(default_new_tab_url_);
   }
 }
 
+/// 响应地址栏回车，拒绝非法地址并导航有效地址。
 void TabbedBrowserWindow::OnUrlBarReturnPressed() {
   QString normalized_url;
   if (!TryNormalizeAddressBarUrl(url_bar_->text(), &normalized_url)) {
@@ -265,9 +327,14 @@ void TabbedBrowserWindow::OnUrlBarReturnPressed() {
 
 }  // namespace
 
+/// 初始化日志、CEF、Qt 主窗口和标签管理器，再进入 Qt 事件循环。
+/// @param argc 进程参数个数。
+/// @param argv 进程参数数组。
+/// @return 子进程退出码、Qt 事件循环结果或初始化失败码。
 int main(int argc, char* argv[]) {
   offscreen::SetDiagnosticLogFileToApplicationDirectory();
   offscreen::DiagnosticLog("main entered");
+  // CEF 子进程必须在创建 QApplication 前分流；子进程不进入宿主的 Qt 事件循环。
   if (const auto exit_code = offscreen::CefRuntime::ExecuteSubprocess(
           ::GetModuleHandleW(nullptr))) {
     offscreen::DiagnosticLog("CefRuntime::ExecuteSubprocess handled exit_code=" +
@@ -291,6 +358,7 @@ int main(int argc, char* argv[]) {
       NativePath(QDir(app_dir).filePath("cef_cache")).toStdWString();
   runtime_options.log_path =
       NativePath(QDir(app_dir).filePath("cef.log")).toStdWString();
+  // 主进程在创建任意标签页前完成一次进程级 CEF 初始化。
   if (!runtime.Initialize(runtime_options)) {
     offscreen::DiagnosticLog("CefRuntime::Initialize failed");
     return 1;
@@ -313,6 +381,7 @@ int main(int argc, char* argv[]) {
   offscreen::DiagnosticLog("Qt event loop exited result=" +
                            std::to_string(result));
 
+  // 标签页关闭是异步的；若仍有视图登记，拒绝提前关闭 CEF 运行时。
   if (!runtime.Shutdown()) {
     offscreen::DiagnosticLog("CefRuntime::Shutdown deferred: browser still open");
     return 1;

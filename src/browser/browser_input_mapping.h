@@ -26,13 +26,38 @@ constexpr int kMouseButtonLeft = 0;    // MBT_LEFT
 constexpr int kMouseButtonMiddle = 1;  // MBT_MIDDLE
 constexpr int kMouseButtonRight = 2;   // MBT_RIGHT
 
+/// 将 Qt 修饰键位掩码转换为 CEF 事件标志。
+/// @param qt_modifiers Qt::KeyboardModifiers 的整数值。
+/// @return CEF 修饰键标志。
 uint32_t MapQtModifiersToCefEventFlags(int qt_modifiers);
+/// 将 Qt 鼠标按键转换为 CEF 鼠标按键类型。
+/// @param qt_mouse_button Qt::MouseButton 的整数值。
+/// @return CEF 鼠标按键常量。
 int MapQtMouseButtonToCefMouseButton(int qt_mouse_button);
+/// 将当前按下的 Qt 鼠标按钮转换为 CEF 修饰标志。
+/// @param qt_mouse_buttons Qt::MouseButtons 的整数值。
+/// @return 包含鼠标按钮的 CEF 标志。
 uint32_t MouseButtonsToCefEventFlags(int qt_mouse_buttons);
+/// 从 Win32 键盘消息构造 CEF 修饰键标志。
+/// @param w_param Win32 键盘消息的 wParam。
+/// @param l_param Win32 键盘消息的 lParam。
+/// @return CEF 修饰键标志。
 uint32_t MapWindowsKeyboardMessageToCefEventFlags(uintptr_t w_param,
                                                   intptr_t l_param);
+/// 查询指定虚拟键是否处于按下状态。
+/// @param windows_key_code Win32 虚拟键码。
+/// @return 键按下时为 true。
 bool IsWindowsKeyDown(int windows_key_code);
+/// 判断虚拟键是否必须在原生键码中携带扩展位。
+/// @param windows_key_code Win32 虚拟键码。
+/// @return 扩展键时为 true。
 bool IsExtendedWindowsVirtualKey(int windows_key_code);
+/// 根据虚拟键和扫描码拼装 CEF 需要的 Win32 原生键码。
+/// @param windows_key_code Win32 虚拟键码。
+/// @param native_scan_code 键盘扫描码。
+/// @param was_key_down 消息前该键是否已经按下。
+/// @param is_key_up 当前消息是否为抬起事件。
+/// @return 可用于 CefKeyEvent::native_key_code 的值。
 uint32_t BuildWindowsNativeKeyCode(int windows_key_code,
                                    int native_scan_code,
                                    bool was_key_down,

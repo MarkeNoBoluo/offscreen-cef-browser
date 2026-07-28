@@ -5,6 +5,9 @@
 
 namespace offscreen {
 
+/// 将 NaN、无穷或非正缩放系数回退为 1.0。
+/// @param scale 原始设备缩放系数。
+/// @return 可用于坐标转换的正数缩放系数。
 double NormalizeDeviceScaleFactor(double scale) {
   if (!std::isfinite(scale) || scale <= 0.0) {
     return 1.0;
@@ -12,6 +15,10 @@ double NormalizeDeviceScaleFactor(double scale) {
   return scale;
 }
 
+/// 通过向外取整避免缩放转换后遗漏边缘像素。
+/// @param rect CEF 脏区域的物理像素矩形。
+/// @param scale 设备像素缩放系数。
+/// @return Qt update 使用的 DIP 矩形。
 BrowserViewRect PhysicalRectToDipUpdateRect(BrowserPhysicalRect rect,
                                             double scale) {
   const double safe_scale = NormalizeDeviceScaleFactor(scale);

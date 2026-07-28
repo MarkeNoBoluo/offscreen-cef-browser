@@ -18,11 +18,17 @@ namespace offscreen {
 
 namespace {
 
+/// 将 QUrl 编码为可传给 CEF 的 UTF-8 地址。
+/// @param url Qt 地址对象。
+/// @return 百分号编码后的 UTF-8 地址。
 std::string UrlToUtf8(const QUrl& url) {
   const QByteArray bytes = url.toEncoded();
   return std::string(bytes.constData(), static_cast<size_t>(bytes.size()));
 }
 
+/// 将 CEF 返回的 UTF-8 地址转换为 QUrl。
+/// @param value UTF-8 编码地址。
+/// @return Qt 地址对象。
 QUrl Utf8ToUrl(const std::string& value) {
   return QUrl::fromEncoded(QByteArray::fromStdString(value));
 }
@@ -179,6 +185,7 @@ void CefWebView::StartBrowserIfReady() {
 
   browser_create_requested_ = true;
   close_notified_ = false;
+  // 推迟到当前 Qt 事件结束后执行，使 showEvent 已完成且 BrowserWidget 的原生句柄可用。
   QTimer::singleShot(0, this, [this]() {
     if (close_requested_) {
       OnBrowserClosed();
@@ -223,6 +230,7 @@ void CefWebView::OnBrowserClosed() {
   browser_widget_->SetResizeCallback({});
   browser_widget_->SetImeHandler(nullptr);
   ime_handler_.reset();
+  // 运行时依据登记的视图数判断是否允许 CefShutdown，必须在关闭通知前注销。
   if (CefRuntime* runtime = CefRuntime::Active()) {
     runtime->UnregisterWebView(this);
   }

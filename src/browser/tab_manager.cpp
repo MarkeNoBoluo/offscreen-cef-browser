@@ -17,11 +17,18 @@ namespace offscreen {
 
 namespace {
 
+/// 判断窗口是否为指定父窗口本身或其子窗口。
+/// @param parent 候选父窗口。
+/// @param window 待检查窗口。
+/// @return 两者存在父子关系时为 true。
 bool IsSameOrChild(HWND parent, HWND window) {
     return parent && window &&
            (parent == window || ::IsChild(parent, window));
 }
 
+/// 判断 Win32 消息是否属于需要路由的输入法消息集合。
+/// @param message Win32 消息编号。
+/// @return 输入法相关消息时为 true。
 bool IsImeMessage(UINT message) {
     switch (message) {
         case WM_INPUTLANGCHANGE:
@@ -92,6 +99,7 @@ TabManager::TabId TabManager::CreateTab(const std::string& initial_url) {
 
     emit TabCreated(id, widget, "Loading...");
 
+    // 等 Qt 将控件加入标签页并创建原生窗口后，再以有效 HWND 创建无窗口 CEF 浏览器。
     QTimer::singleShot(0, this, [this, id, initial_url]() {
         auto it = tabs_by_id_.find(id);
         if (it == tabs_by_id_.end()) return;
@@ -118,6 +126,7 @@ TabManager::TabId TabManager::CreateTab(const std::string& initial_url) {
         entry->browser_service->SetCursorChangeCallback(
             [widget_guard](int cursor_type, HCURSOR cursor_handle) {
                 if (!widget_guard) return;
+                // 用队列在控件仍存活时更新鼠标样式，避免回调直接持有已销毁的控件。
                 QMetaObject::invokeMethod(
                     widget_guard.data(),
                     [widget_guard, cursor_type, cursor_handle]() {
@@ -251,6 +260,8 @@ bool TabManager::nativeEventFilter(const QByteArray& eventType, void* message,
     const bool route_from_ancestor =
         targets_browser_ancestor && qt_focus_in_browser;
 
+    // IME 消息有时由顶层窗口接收。仅当活动浏览器拥有 Qt 焦点时才从祖先窗口
+    // 转发，避免多个标签或其他控件收到同一段预编辑文本。
     std::ostringstream stream;
     stream << "TabManager::nativeEventFilter event_type=["
            << eventType.constData() << "] message="
@@ -297,6 +308,7 @@ void TabManager::OnTabBrowserClosed(TabId id) {
     if (it->second->close_requested) {
         pending_close_count_--;
     }
+    // 让 CEF 的关闭回调先完整返回，再释放其仍可能引用的 Qt 控件。
     QTimer::singleShot(0, this, [this, id]() {
         CleanupTab(id);
         if (shutting_down_ && pending_close_count_ == 0) {

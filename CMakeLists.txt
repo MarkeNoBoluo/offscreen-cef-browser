@@ -25,6 +25,8 @@ if(MSVC)
     message(FATAL_ERROR "V1 Stage 1 requires VS2017/MSVC 19.1x")
   endif()
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  # Source files include Chinese comments; keep MSVC from interpreting UTF-8 as the active ANSI code page.
+  add_compile_options(/utf-8)
 else()
   message(FATAL_ERROR "V1 Stage 1 requires VS2017/MSVC 19.1x")
 endif()

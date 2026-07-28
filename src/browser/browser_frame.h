@@ -11,21 +11,45 @@
 namespace offscreen {
 
 struct BrowserFrameSnapshot {
+  /// 是否已收到主视图像素帧。
   bool has_view = false;
+  /// CEF 弹出层当前是否可见。
   bool popup_visible = false;
+  /// 弹出层相对主视图的逻辑像素位置。
   BrowserViewRect popup_rect;
+  /// 主视图的独立图像副本。
   QImage view_image;
+  /// 弹出层的独立图像副本。
   QImage popup_image;
 };
 
+// 保存最新的视图帧和弹出层帧。CEF 提供的缓冲区只在 OnPaint 回调期间有效，
+// 因此写入时必须复制；绘制端通过 Snapshot 取得独立副本，避免跨线程访问 QImage。
 class BrowserFrame {
  public:
+  /// 创建空帧缓存。
   BrowserFrame() = default;
 
+  /// 复制 CEF 主视图的 BGRA 像素。
+  /// @param bgra_buffer 仅在调用期间有效的 CEF 像素缓冲区。
+  /// @param width 像素宽度。
+  /// @param height 像素高度。
+  /// @param scale 设备像素缩放系数。
   void SetViewImage(const void* bgra_buffer, int width, int height, double scale);
+  /// 复制 CEF 弹出层的 BGRA 像素。
+  /// @param bgra_buffer 仅在调用期间有效的 CEF 像素缓冲区。
+  /// @param width 像素宽度。
+  /// @param height 像素高度。
+  /// @param scale 设备像素缩放系数。
   void SetPopupImage(const void* bgra_buffer, int width, int height, double scale);
+  /// 更新弹出层可见状态。
+  /// @param visible CEF 报告的显示状态。
   void SetPopupVisible(bool visible);
+  /// 更新弹出层相对主视图的位置。
+  /// @param rect CEF 提供的逻辑像素矩形。
   void SetPopupRect(BrowserViewRect rect);
+  /// 读取可在 Qt 绘制线程安全使用的帧副本。
+  /// @return 主视图和弹出层的当前快照。
   BrowserFrameSnapshot Snapshot() const;
 
  private:

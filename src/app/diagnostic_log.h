@@ -11,16 +11,21 @@
 
 namespace offscreen {
 
+/// 返回诊断日志共享锁，串行化多线程写入。
+/// @return 进程内唯一的互斥量。
 inline std::mutex& DiagnosticLogMutex() {
   static std::mutex log_mutex;
   return log_mutex;
 }
 
+/// 返回当前诊断日志文件句柄的存储位置。
+/// @return 可读写的进程级文件句柄引用。
 inline HANDLE& DiagnosticLogFileHandle() {
   static HANDLE log_file = INVALID_HANDLE_VALUE;
   return log_file;
 }
 
+/// 在可执行文件目录创建或追加诊断日志文件。
 inline void SetDiagnosticLogFileToApplicationDirectory() {
   wchar_t module_path[MAX_PATH] = {};
   const DWORD length =
@@ -52,12 +57,17 @@ inline void SetDiagnosticLogFileToApplicationDirectory() {
   current_log_file = log_file;
 }
 
+/// 将地址或数值格式化为十六进制文本。
+/// @param value 待格式化的无符号指针值。
+/// @return 带 0x 前缀的文本。
 inline std::string HexValue(uintptr_t value) {
   std::ostringstream stream;
   stream << "0x" << std::hex << value;
   return stream.str();
 }
 
+/// 输出带进程和线程标识的诊断日志。
+/// @param message 要记录的 UTF-8 消息。
 inline void DiagnosticLog(const std::string& message) {
   std::ostringstream stream;
   stream << "[offscreen pid=" << ::GetCurrentProcessId()
@@ -77,6 +87,11 @@ inline void DiagnosticLog(const std::string& message) {
   }
 }
 
+/// 按“前若干次 + 固定间隔”策略决定是否输出高频日志。
+/// @param counter 调用次数计数器。
+/// @param first_count 始终记录的前几次调用数量。
+/// @param every_count 后续每隔多少次记录一次，非正数表示禁用间隔记录。
+/// @return 本次调用是否应写入日志。
 inline bool ShouldDiagnosticLog(std::atomic<int>& counter,
                                 int first_count,
                                 int every_count) {

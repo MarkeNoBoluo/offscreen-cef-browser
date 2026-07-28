@@ -10,6 +10,9 @@ namespace offscreen {
 
 namespace {
 
+/// 将 CEF UTF-16/UTF-8 抽象字符串转换为宿主 UTF-8 文本。
+/// @param value CEF 字符串。
+/// @return 标准 UTF-8 字符串。
 std::string CefStringToUtf8(const CefString& value) {
   return value.ToString();
 }
