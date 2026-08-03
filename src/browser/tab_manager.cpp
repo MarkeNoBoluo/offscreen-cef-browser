@@ -232,7 +232,7 @@ int TabManager::tab_count() const {
 }
 
 bool TabManager::nativeEventFilter(const QByteArray& eventType, void* message,
-                                   long* result) {
+                                   qintptr* result) {
     if (eventType != "windows_generic_MSG" &&
         eventType != "windows_dispatcher_MSG") {
         return false;

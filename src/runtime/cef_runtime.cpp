@@ -179,7 +179,7 @@ class CefRuntime::Impl final : public QAbstractNativeEventFilter {
   /// @param result 输出消息处理结果。
   /// @return 消息被网页控件处理时为 true。
   bool nativeEventFilter(const QByteArray& event_type, void* message,
-                         long* result) override {
+                         qintptr* result) override {
     if ((event_type != "windows_generic_MSG" &&
          event_type != "windows_dispatcher_MSG") ||
         message == nullptr) {

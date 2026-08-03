@@ -12,23 +12,21 @@ endif()
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   set(OFFSCREEN_ARCH "x64")
-  set(OFFSCREEN_CEF_DISTRIBUTION "windows64")
-  set(OFFSCREEN_QT_PACKAGE "msvc2017_64")
+  set(OFFSCREEN_CEF_DISTRIBUTION "windows64_minimal")
+  set(OFFSCREEN_QT_PACKAGE "msvc2022_64")
 else()
-  set(OFFSCREEN_ARCH "x86")
-  set(OFFSCREEN_CEF_DISTRIBUTION "windows32_minimal")
-  set(OFFSCREEN_QT_PACKAGE "msvc2017")
+  message(FATAL_ERROR "CEF 100 configuration supports x64 only")
 endif()
 
 if(MSVC)
-  if(MSVC_VERSION LESS 1910 OR MSVC_VERSION GREATER_EQUAL 1920)
-    message(FATAL_ERROR "V1 Stage 1 requires VS2017/MSVC 19.1x")
+  if(MSVC_VERSION LESS 1930 OR MSVC_VERSION GREATER_EQUAL 1950)
+    message(FATAL_ERROR "This configuration requires VS2022/MSVC 19.3x or 19.4x")
   endif()
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
   # Source files include Chinese comments; keep MSVC from interpreting UTF-8 as the active ANSI code page.
   add_compile_options(/utf-8)
 else()
-  message(FATAL_ERROR "V1 Stage 1 requires VS2017/MSVC 19.1x")
+  message(FATAL_ERROR "This configuration requires VS2022/MSVC 19.3x or 19.4x")
 endif()
 
 option(OFFSCREEN_BUILD_APP "Build the Qt + CEF browser application" ON)
@@ -36,7 +34,7 @@ option(OFFSCREEN_BUILD_TESTS "Build unit tests" ON)
 option(OFFSCREEN_BUILD_EMBEDDING_DEMOS "Build the CEF embedding demos" ON)
 
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "Supported configurations" FORCE)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/msvc-2017-${OFFSCREEN_ARCH}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/msvc-2022-${OFFSCREEN_ARCH}")
 
 add_library(offscreen_core STATIC
   src/app/app_config.cpp
@@ -165,28 +163,19 @@ if(OFFSCREEN_BUILD_APP)
     message(FATAL_ERROR "This build requires a CEF ${OFFSCREEN_CEF_DISTRIBUTION} binary distribution")
   endif()
   list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
+  set(CEF_RUNTIME_LIBRARY_FLAG "/MD" CACHE STRING "CEF runtime library flag" FORCE)
   find_package(CEF REQUIRED)
 
   file(STRINGS "${CEF_INCLUDE_PATH}/include/cef_version.h" CEF_VERSION_MAJOR_LINE REGEX "#define CEF_VERSION_MAJOR [0-9]+")
   string(REGEX REPLACE ".*CEF_VERSION_MAJOR ([0-9]+).*" "\\1" CEF_VERSION_MAJOR_VALUE "${CEF_VERSION_MAJOR_LINE}")
-  if(NOT CEF_VERSION_MAJOR_VALUE EQUAL 98)
-    message(FATAL_ERROR "This build requires CEF major version 98")
-  endif()
-  if(MSVC AND CEF_VERSION_MAJOR_VALUE GREATER_EQUAL 142 AND MSVC_VERSION LESS 1930)
-    message(FATAL_ERROR
-      "CEF ${CEF_VERSION_MAJOR_VALUE} requires Visual Studio 2022 or a compatible newer MSVC toolchain. "
-      "Use a CEF binary distribution compatible with Qt 5.14.2 MSVC2017 ${OFFSCREEN_ARCH}, "
-      "or move V1 to a newer MSVC toolchain.")
-  elseif(MSVC AND CEF_VERSION_MAJOR_VALUE GREATER_EQUAL 102 AND MSVC_VERSION LESS 1920)
-    message(FATAL_ERROR
-      "CEF ${CEF_VERSION_MAJOR_VALUE} requires Visual Studio 2019 or newer according to its binary distribution CMake files. "
-      "This project is fixed to Qt 5.14.2 MSVC2017 ${OFFSCREEN_ARCH}, so use a matching CEF binary distribution.")
+  if(NOT CEF_VERSION_MAJOR_VALUE EQUAL 100)
+    message(FATAL_ERROR "This build requires CEF major version 100")
   endif()
 
-  find_package(Qt5 5.14.2 EXACT REQUIRED COMPONENTS Widgets)
-  file(TO_CMAKE_PATH "${Qt5_DIR}" QT5_CMAKE_DIR)
-  if(NOT QT5_CMAKE_DIR MATCHES "(^|/)${OFFSCREEN_QT_PACKAGE}(/|$)")
-    message(FATAL_ERROR "This build requires the Qt 5.14.2 ${OFFSCREEN_QT_PACKAGE} package")
+  find_package(Qt6 6.9.3 EXACT REQUIRED COMPONENTS Widgets)
+  file(TO_CMAKE_PATH "${Qt6_DIR}" QT6_CMAKE_DIR)
+  if(NOT QT6_CMAKE_DIR MATCHES "(^|/)${OFFSCREEN_QT_PACKAGE}(/|$)")
+    message(FATAL_ERROR "This build requires the Qt 6.9.3 ${OFFSCREEN_QT_PACKAGE} package")
   endif()
 
   add_subdirectory("${CEF_LIBCEF_DLL_WRAPPER_PATH}" "${CMAKE_BINARY_DIR}/libcef_dll_wrapper")

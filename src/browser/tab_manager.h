@@ -78,7 +78,7 @@ public:
     /// @param result 输出处理结果。
     /// @return 消息被浏览器处理时为 true。
     bool nativeEventFilter(const QByteArray& eventType, void* message,
-                           long* result) override;
+                           qintptr* result) override;
 
 signals:
     /// Qt 控件创建并插入标签映射后发射。

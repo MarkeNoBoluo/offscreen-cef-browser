@@ -307,7 +307,7 @@ void BrowserWidget::SetCefCursor(int cursor_type, HCURSOR cursor_handle) {
 }
 
 bool BrowserWidget::HandleImeNativeMessage(MSG* windows_message,
-                                           long* result) {
+                                            qintptr* result) {
   switch (windows_message->message) {
     case WM_INPUTLANGCHANGE:
       DiagnosticLog("BrowserWidget::HandleImeNativeMessage WM_INPUTLANGCHANGE wParam=" +
@@ -530,8 +530,9 @@ void BrowserWidget::wheelEvent(QWheelEvent* event) {
     delta_y = angle_delta.y();
   }
 
+  const QPoint position = event->position().toPoint();
   browser_service_->SendMouseWheelEvent(
-      event->pos().x(), event->pos().y(),
+      position.x(), position.y(),
       static_cast<int>(event->buttons()),
       static_cast<int>(event->modifiers()), delta_x, delta_y);
 }

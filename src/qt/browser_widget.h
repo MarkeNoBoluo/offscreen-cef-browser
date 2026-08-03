@@ -69,7 +69,7 @@ class BrowserWidget final : public QWidget {
   /// @param windows_message Win32 MSG 结构。
   /// @param result 输出原生消息处理结果。
   /// @return 消息被输入法处理器消费时为 true。
-  bool HandleImeNativeMessage(MSG* windows_message, long* result);
+  bool HandleImeNativeMessage(MSG* windows_message, qintptr* result);
 
   /// 记录此控件所属的标签标识。
   /// @param id TabManager 分配的标签标识。

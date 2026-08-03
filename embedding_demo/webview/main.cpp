@@ -1,5 +1,7 @@
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDebug>
+#include <QFileInfo>
 #include <QMainWindow>
 #include <QTimer>
 #include <QUrl>
@@ -68,6 +70,21 @@ int main(int argc, char* argv[]) {
   }
 
   QApplication app(argc, argv);
+  QUrl initial_url(QStringLiteral("http://192.168.42.116"));
+  if (app.arguments().size() > 1) {
+    const QFileInfo html_file(app.arguments().at(1));
+    const QString suffix = html_file.suffix();
+    if (!html_file.exists() || !html_file.isFile() ||
+        (suffix.compare(QStringLiteral("html"), Qt::CaseInsensitive) != 0 &&
+         suffix.compare(QStringLiteral("htm"), Qt::CaseInsensitive) != 0)) {
+      qCritical().noquote()
+          << QStringLiteral("Local HTML file not found or invalid: %1")
+                 .arg(html_file.filePath());
+      return 2;
+    }
+    initial_url = QUrl::fromLocalFile(html_file.absoluteFilePath());
+  }
+
   offscreen::CefRuntime runtime;
   if (!runtime.Initialize()) {
     return 1;
@@ -75,7 +92,7 @@ int main(int argc, char* argv[]) {
 
   WebViewDemoWindow window;
   window.show();
-  window.LoadInitialUrl(QUrl(QStringLiteral("http://192.168.42.116")));
+  window.LoadInitialUrl(initial_url);
 
   const int result = app.exec();
   return runtime.Shutdown() ? result : 1;

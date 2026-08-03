@@ -237,7 +237,7 @@ void CefWebView::OnBrowserClosed() {
   emit browserClosed();
 }
 
-bool CefWebView::HandleNativeImeMessage(MSG* message, long* result) {
+bool CefWebView::HandleNativeImeMessage(MSG* message, qintptr* result) {
   return browser_widget_ && browser_widget_->HandleImeNativeMessage(message, result);
 }
 

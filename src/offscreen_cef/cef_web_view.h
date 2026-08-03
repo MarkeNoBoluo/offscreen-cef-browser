@@ -83,7 +83,7 @@ class CefWebView final : public QWidget {
   /// @param message 原生消息结构。
   /// @param result 输出消息处理结果。
   /// @return 消息被处理时为 true。
-  bool HandleNativeImeMessage(MSG* message, long* result);
+  bool HandleNativeImeMessage(MSG* message, qintptr* result);
 
   std::unique_ptr<BrowserService> browser_service_;
   std::unique_ptr<BrowserImeHandler> ime_handler_;

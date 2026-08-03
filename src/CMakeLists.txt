@@ -39,7 +39,7 @@ target_include_directories(offscreen_cef_runtime
 )
 target_link_libraries(offscreen_cef_runtime
   PUBLIC
-    Qt5::Widgets
+    Qt6::Widgets
     libcef_lib
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
