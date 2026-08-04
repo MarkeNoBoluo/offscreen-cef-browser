@@ -12,6 +12,7 @@
 #include "browser/browser_input_mapping.h"
 #include "browser/browser_service.h"
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QCoreApplication>
 #include <QDir>
 #include <QDragEnterEvent>
@@ -31,6 +32,7 @@
 #include <QResizeEvent>
 #include <QScreen>
 #include <QThread>
+#include <QTimer>
 #include <QUrl>
 #include <QWindow>
 #include <QWheelEvent>
@@ -798,6 +800,26 @@ void BrowserWidget::wheelEvent(QWheelEvent* event) {
       position.x(), position.y(),
       static_cast<int>(event->buttons()),
       static_cast<int>(event->modifiers()), delta_x, delta_y);
+}
+
+void BrowserWidget::contextMenuEvent(QContextMenuEvent* event) {
+  // 不再无条件弹菜单；宿主菜单改由 CEF OnBeforeContextMenu 驱动，
+  // 避免与网页自定义右键菜单重叠。
+  last_context_menu_pos_ = event->globalPos();
+  event->accept();
+}
+
+void BrowserWidget::RequestContextMenu(int view_x, int view_y) {
+  // Windows 上 contextMenuEvent（右键抬起）先于 OnBeforeContextMenu 触发，
+  // 记录的全局坐标精确无缩放歧义；CEF 视图坐标作回退。
+  const QPoint global_pos = last_context_menu_pos_.isNull()
+      ? mapToGlobal(QPoint(view_x, view_y))
+      : last_context_menu_pos_;
+  // CEF 回调运行在消息泵内，延迟一个事件循环再弹菜单，避免在
+  // OnBeforeContextMenu 栈内 QMenu::exec() 嵌套循环导致 CEF 重入。
+  QTimer::singleShot(0, this, [this, global_pos]() {
+    emit contextMenuRequested(global_pos);
+  });
 }
 
 void BrowserWidget::leaveEvent(QEvent* event) {

@@ -13,6 +13,7 @@
 #include "browser/browser_paint_geometry.h"
 #include "browser/osr_render_handler.h"
 #include "include/cef_browser.h"
+#include "include/cef_download_handler.h"
 #include "include/cef_drag_data.h"
 
 namespace offscreen {
@@ -33,7 +34,14 @@ class BrowserService final : public BrowserClient::Delegate {
   using TitleChangeCallback = std::function<void(const std::string& title)>;
   using LoadStateChangeCallback =
       std::function<void(bool is_loading, bool can_go_back, bool can_go_forward)>;
-  using LoadErrorCallback = std::function<void(const std::string& error_text)>;
+  using LoadErrorCallback =
+      std::function<void(int error_code, const std::string& failed_url,
+                         const std::string& error_text)>;
+  using DownloadStateChangeCallback =
+      std::function<void(int state, const std::string& file_name,
+                         const std::string& full_path)>;
+  using ContextMenuRequestedCallback =
+      std::function<void(int view_x, int view_y)>;
   using StartDraggingCallback = OsrRenderHandler::StartDraggingCallback;
   using UpdateDragCursorCallback = OsrRenderHandler::UpdateDragCursorCallback;
 
@@ -80,8 +88,18 @@ class BrowserService final : public BrowserClient::Delegate {
   /// @param callback 接收加载和前进后退可用状态的回调。
   void SetLoadStateChangeCallback(LoadStateChangeCallback callback);
   /// 设置页面加载失败回调。
-  /// @param callback 接收 CEF 错误文本的回调。
+  /// @param callback 接收错误码、失败地址和错误文本的回调。
   void SetLoadErrorCallback(LoadErrorCallback callback);
+  /// 设置下载保存目录；空路径使用 CEF 默认下载目录。
+  /// @param path 宽字符格式的目录路径。
+  void SetDownloadDirectory(const std::wstring& path);
+  /// 设置下载状态变化回调。
+  /// @param callback 接收状态、文件名和完整路径的回调。
+  void SetDownloadStateChangeCallback(DownloadStateChangeCallback callback);
+  /// 设置页面未拦截右键时的菜单请求回调。
+  /// @param callback 接收触发点视图内逻辑坐标的回调。
+  void SetContextMenuRequestedCallback(
+      ContextMenuRequestedCallback callback);
   /// 更新渲染处理器的尺寸并通知 CEF 重排。
   /// @param view_rect 最新逻辑视图矩形。
   /// @param device_scale_factor 最新设备缩放系数。
@@ -93,6 +111,18 @@ class BrowserService final : public BrowserClient::Delegate {
   void Reload();
   /// 停止当前页面加载。
   void Stop();
+  /// 后退到历史上一页。
+  void GoBack();
+  /// 前进到历史下一页。
+  void GoForward();
+  /// 复制选中文本。
+  void Copy();
+  /// 剪切选中文本。
+  void Cut();
+  /// 粘贴剪贴板文本。
+  void Paste();
+  /// 全选页面文本。
+  void SelectAll();
   /// 请求 CEF 关闭浏览器，必要时等待创建或关闭回调。
   /// @return 可立即由 Qt 关闭时为 true。
   bool TryCloseBrowser();
@@ -103,6 +133,15 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 查询是否已进入关闭流程。
   /// @return 正在关闭时为 true。
   bool is_closing() const;
+  /// 查询历史中是否有上一页。
+  /// @return 可后退时为 true。
+  bool can_go_back() const;
+  /// 查询历史中是否有下一页。
+  /// @return 可前进时为 true。
+  bool can_go_forward() const;
+  /// 查询是否正在加载。
+  /// @return 正在加载时为 true。
+  bool is_loading() const;
   /// 获取最近页面标题。
   /// @return UTF-8 标题。
   std::string title() const;
@@ -259,9 +298,12 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 缓存并转发页面标题。
   /// @param title 最新 UTF-8 标题。
   void OnTitleChanged(const std::string& title) override;
-  /// 缓存并转发加载错误文本。
+  /// 缓存并转发加载错误。
+  /// @param error_code CEF 错误码。
+  /// @param failed_url 失败的 UTF-8 地址。
   /// @param error_text CEF 生成的错误说明。
-  void OnLoadErrorText(const std::string& error_text) override;
+  void OnLoadError(int error_code, const std::string& failed_url,
+                   const std::string& error_text) override;
   /// 记录渲染进程异常结束。
   void OnRenderProcessTerminated() override;
   /// 将 CEF 光标变更转发给 Qt 控件。
@@ -276,6 +318,21 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 将 CEF 弹出窗口请求交给宿主创建新标签。
   /// @param url 弹出目标的 UTF-8 地址。
   void OnPopupRequest(const std::string& url) override;
+  /// 响应 CEF 开始下载请求并保存到下载目录。
+  /// @param callback CEF 下载继续回调。
+  /// @param suggested_name 建议的 UTF-8 文件名。
+  void OnDownloadStarted(CefRefPtr<CefBeforeDownloadCallback> callback,
+                         const std::string& suggested_name) override;
+  /// 转发下载状态变化。
+  /// @param state 下载状态：0 开始、1 完成、2 取消。
+  /// @param file_name UTF-8 文件名。
+  /// @param full_path UTF-8 完整保存路径。
+  void OnDownloadStateChanged(int state, const std::string& file_name,
+                              const std::string& full_path) override;
+  /// 接收 CEF 即将显示默认上下文菜单的通知并转发给宿主。
+  /// @param view_x 触发点在视图中的逻辑 x 坐标。
+  /// @param view_y 触发点在视图中的逻辑 y 坐标。
+  void OnContextMenuRequested(int view_x, int view_y) override;
 
  private:
   CefRefPtr<CefBrowser> browser_;
@@ -298,6 +355,9 @@ class BrowserService final : public BrowserClient::Delegate {
   TitleChangeCallback title_change_callback_;
   LoadStateChangeCallback load_state_change_callback_;
   LoadErrorCallback load_error_callback_;
+  DownloadStateChangeCallback download_state_change_callback_;
+  ContextMenuRequestedCallback context_menu_requested_callback_;
+  std::wstring download_dir_;
   std::string address_;
   std::string title_;
   std::string last_error_;

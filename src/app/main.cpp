@@ -3,15 +3,19 @@
 #include <string>
 #include <utility>
 
+#include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDir>
+#include <QHBoxLayout>
 #include <QLineEdit>
 #include <QMainWindow>
+#include <QMenu>
 #include <QMetaObject>
 #include <QObject>
 #include <QPointer>
 #include <QPushButton>
+#include <QStatusBar>
 #include <QString>
 #include <QTabWidget>
 #include <QUrl>
@@ -126,9 +130,56 @@ class TabbedBrowserWindow final : public QMainWindow {
   void OnNewTabClicked();
   /// 校验地址栏文本并导航当前标签或创建首个标签。
   void OnUrlBarReturnPressed();
+  /// 后退按钮响应。
+  void OnBackClicked();
+  /// 前进按钮响应。
+  void OnForwardClicked();
+  /// 刷新按钮响应。
+  void OnReloadClicked();
+  /// 停止按钮响应。
+  void OnStopClicked();
+  /// 构建并显示右键菜单。
+  /// @param w 被点击的浏览器控件。
+  /// @param global_pos 菜单弹出的全局坐标。
+  void OnContextMenuRequested(offscreen::BrowserWidget* w,
+                              const QPoint& global_pos);
+  /// 刷新后退/前进/停止按钮可用状态。
+  /// @param is_loading 是否正在加载。
+  /// @param can_go_back 是否可后退。
+  /// @param can_go_forward 是否可前进。
+  void UpdateNavigationButtons(bool is_loading, bool can_go_back,
+                               bool can_go_forward);
+  /// 仅活动标签的加载状态变化时更新按钮和状态栏。
+  /// @param id 变化标签标识。
+  /// @param is_loading 是否正在加载。
+  /// @param can_go_back 是否可后退。
+  /// @param can_go_forward 是否可前进。
+  void OnTabLoadStateChanged(offscreen::TabManager::TabId id,
+                             bool is_loading, bool can_go_back,
+                             bool can_go_forward);
+  /// 仅活动标签的加载错误时更新状态栏。
+  /// @param id 变化标签标识。
+  /// @param error_code CEF 错误码。
+  /// @param failed_url 失败的 UTF-8 地址。
+  /// @param error_text UTF-8 错误说明。
+  void OnTabLoadError(offscreen::TabManager::TabId id, int error_code,
+                      const std::string& failed_url,
+                      const std::string& error_text);
+  /// 仅活动标签的下载状态变化时更新状态栏。
+  /// @param id 下载所属标签。
+  /// @param state 下载状态：0 开始、1 完成、2 取消。
+  /// @param file_name UTF-8 文件名。
+  /// @param full_path UTF-8 完整保存路径。
+  void OnTabDownloadStateChanged(offscreen::TabManager::TabId id, int state,
+                                 const std::string& file_name,
+                                 const std::string& full_path);
 
   QTabWidget* tab_widget_ = nullptr;
   QLineEdit* url_bar_ = nullptr;
+  QPushButton* back_button_ = nullptr;
+  QPushButton* forward_button_ = nullptr;
+  QPushButton* reload_button_ = nullptr;
+  QPushButton* stop_button_ = nullptr;
   offscreen::TabManager* tab_manager_ = nullptr;
   std::string default_new_tab_url_ = "https://www.baidu.com";
 };
@@ -144,13 +195,46 @@ TabbedBrowserWindow::TabbedBrowserWindow(QWidget* parent)
   layout->setContentsMargins(0, 0, 0, 0);
   layout->setSpacing(0);
 
+  auto* nav_bar = new QHBoxLayout();
+  nav_bar->setContentsMargins(0, 0, 0, 0);
+  nav_bar->setSpacing(2);
+
+  back_button_ = new QPushButton(QStringLiteral("\u2190"), central);
+  back_button_->setEnabled(false);
+  back_button_->setToolTip(QStringLiteral("Back"));
+  QObject::connect(back_button_, &QPushButton::clicked, this,
+                   &TabbedBrowserWindow::OnBackClicked);
+  nav_bar->addWidget(back_button_);
+
+  forward_button_ = new QPushButton(QStringLiteral("\u2192"), central);
+  forward_button_->setEnabled(false);
+  forward_button_->setToolTip(QStringLiteral("Forward"));
+  QObject::connect(forward_button_, &QPushButton::clicked, this,
+                   &TabbedBrowserWindow::OnForwardClicked);
+  nav_bar->addWidget(forward_button_);
+
+  reload_button_ = new QPushButton(QStringLiteral("\u21bb"), central);
+  reload_button_->setToolTip(QStringLiteral("Reload"));
+  QObject::connect(reload_button_, &QPushButton::clicked, this,
+                   &TabbedBrowserWindow::OnReloadClicked);
+  nav_bar->addWidget(reload_button_);
+
+  stop_button_ = new QPushButton(QStringLiteral("\u2715"), central);
+  stop_button_->setEnabled(false);
+  stop_button_->setToolTip(QStringLiteral("Stop"));
+  QObject::connect(stop_button_, &QPushButton::clicked, this,
+                   &TabbedBrowserWindow::OnStopClicked);
+  nav_bar->addWidget(stop_button_);
+
   url_bar_ = new QLineEdit(central);
   url_bar_->setPlaceholderText(QStringLiteral("Enter URL and press Enter..."));
   QObject::connect(url_bar_, &QLineEdit::returnPressed, this,
                    &TabbedBrowserWindow::OnUrlBarReturnPressed);
   QObject::connect(url_bar_, &QLineEdit::textEdited, this,
                    [this]() { url_bar_->setStyleSheet(QString()); });
-  layout->addWidget(url_bar_);
+  nav_bar->addWidget(url_bar_, 1);
+
+  layout->addLayout(nav_bar);
 
   tab_widget_ = new QTabWidget(central);
   tab_widget_->setTabsClosable(true);
@@ -192,6 +276,12 @@ void TabbedBrowserWindow::SetTabManager(offscreen::TabManager* tm) {
                    &TabbedBrowserWindow::OnTabAddressChanged);
   QObject::connect(tab_manager_, &offscreen::TabManager::TabTitleChanged, this,
                    &TabbedBrowserWindow::OnTabTitleChanged);
+  QObject::connect(tab_manager_, &offscreen::TabManager::TabLoadStateChanged,
+                   this, &TabbedBrowserWindow::OnTabLoadStateChanged);
+  QObject::connect(tab_manager_, &offscreen::TabManager::TabLoadError, this,
+                   &TabbedBrowserWindow::OnTabLoadError);
+  QObject::connect(tab_manager_, &offscreen::TabManager::TabDownloadStateChanged,
+                   this, &TabbedBrowserWindow::OnTabDownloadStateChanged);
   QObject::connect(tab_manager_, &offscreen::TabManager::AllTabsClosed, this,
                    [this]() { close(); });
 }
@@ -223,6 +313,10 @@ void TabbedBrowserWindow::OnTabCreated(offscreen::TabManager::TabId id,
                                        offscreen::BrowserWidget* w,
                                        const std::string& title) {
   (void)id;
+  QObject::connect(w, &offscreen::BrowserWidget::contextMenuRequested, this,
+                   [this, w](const QPoint& pos) {
+                     OnContextMenuRequested(w, pos);
+                   });
   const int index = tab_widget_->addTab(w, StringToQString(title));
   tab_widget_->setCurrentIndex(index);
 }
@@ -289,6 +383,14 @@ void TabbedBrowserWindow::OnTabSwitched(int index) {
     url_bar_->setStyleSheet(QString());
     setWindowTitle(QStringLiteral("Offscreen CEF Browser - %1")
                        .arg(StringToQString(service->title())));
+    UpdateNavigationButtons(service->is_loading(), service->can_go_back(),
+                            service->can_go_forward());
+    if (service->is_loading()) {
+      statusBar()->showMessage(QStringLiteral("Loading %1...")
+                                   .arg(StringToQString(service->address())));
+    } else {
+      statusBar()->clearMessage();
+    }
   }
   if (bw) bw->setFocus();
 }
@@ -322,6 +424,171 @@ void TabbedBrowserWindow::OnUrlBarReturnPressed() {
   }
   if (!url.empty()) {
     service->Navigate(url);
+  }
+}
+
+/// 后退当前活动标签。
+void TabbedBrowserWindow::OnBackClicked() {
+  auto* service = tab_manager_->ActiveBrowserService();
+  if (service) {
+    service->GoBack();
+  }
+}
+
+/// 前进当前活动标签。
+void TabbedBrowserWindow::OnForwardClicked() {
+  auto* service = tab_manager_->ActiveBrowserService();
+  if (service) {
+    service->GoForward();
+  }
+}
+
+/// 刷新当前活动标签。
+void TabbedBrowserWindow::OnReloadClicked() {
+  auto* service = tab_manager_->ActiveBrowserService();
+  if (service) {
+    service->Reload();
+  }
+}
+
+/// 停止当前活动标签加载。
+void TabbedBrowserWindow::OnStopClicked() {
+  auto* service = tab_manager_->ActiveBrowserService();
+  if (service) {
+    service->Stop();
+  }
+}
+
+/// 为被点击标签构建导航与编辑右键菜单。
+/// @param w 被点击的浏览器控件。
+/// @param global_pos 菜单弹出的全局坐标。
+void TabbedBrowserWindow::OnContextMenuRequested(
+    offscreen::BrowserWidget* w, const QPoint& global_pos) {
+  auto* service = tab_manager_->BrowserServiceForWidget(w);
+  if (!service) {
+    return;
+  }
+  QMenu menu(this);
+  QAction* back_action = menu.addAction(QStringLiteral("Back"));
+  back_action->setEnabled(service->can_go_back());
+  QAction* forward_action = menu.addAction(QStringLiteral("Forward"));
+  forward_action->setEnabled(service->can_go_forward());
+  QAction* reload_action = menu.addAction(QStringLiteral("Reload"));
+  QAction* stop_action = menu.addAction(QStringLiteral("Stop"));
+  stop_action->setEnabled(service->is_loading());
+  menu.addSeparator();
+  QAction* copy_action = menu.addAction(QStringLiteral("Copy"));
+  QAction* cut_action = menu.addAction(QStringLiteral("Cut"));
+  QAction* paste_action = menu.addAction(QStringLiteral("Paste"));
+  QAction* select_all_action = menu.addAction(QStringLiteral("Select All"));
+
+  QAction* selected = menu.exec(global_pos);
+  if (!selected) {
+    return;
+  }
+  if (selected == back_action) {
+    service->GoBack();
+  } else if (selected == forward_action) {
+    service->GoForward();
+  } else if (selected == reload_action) {
+    service->Reload();
+  } else if (selected == stop_action) {
+    service->Stop();
+  } else if (selected == copy_action) {
+    service->Copy();
+  } else if (selected == cut_action) {
+    service->Cut();
+  } else if (selected == paste_action) {
+    service->Paste();
+  } else if (selected == select_all_action) {
+    service->SelectAll();
+  }
+}
+
+/// 根据加载与历史状态刷新导航按钮。
+/// @param is_loading 是否正在加载。
+/// @param can_go_back 是否可后退。
+/// @param can_go_forward 是否可前进。
+void TabbedBrowserWindow::UpdateNavigationButtons(bool is_loading,
+                                                  bool can_go_back,
+                                                  bool can_go_forward) {
+  back_button_->setEnabled(can_go_back);
+  forward_button_->setEnabled(can_go_forward);
+  stop_button_->setEnabled(is_loading);
+}
+
+/// 仅当变化标签为活动标签时刷新按钮与状态栏。
+/// @param id 变化标签标识。
+/// @param is_loading 是否正在加载。
+/// @param can_go_back 是否可后退。
+/// @param can_go_forward 是否可前进。
+void TabbedBrowserWindow::OnTabLoadStateChanged(
+    offscreen::TabManager::TabId id, bool is_loading, bool can_go_back,
+    bool can_go_forward) {
+  auto* active_bw = qobject_cast<offscreen::BrowserWidget*>(
+      tab_widget_->currentWidget());
+  if (!active_bw || active_bw->tab_id() != id) {
+    return;
+  }
+  UpdateNavigationButtons(is_loading, can_go_back, can_go_forward);
+  auto* service = tab_manager_->ActiveBrowserService();
+  if (is_loading) {
+    statusBar()->showMessage(QStringLiteral("Loading %1...")
+                                 .arg(StringToQString(
+                                     service ? service->address()
+                                             : std::string())));
+  } else {
+    statusBar()->clearMessage();
+  }
+}
+
+/// 仅当变化标签为活动标签时在状态栏显示加载错误。
+/// @param id 变化标签标识。
+/// @param error_code CEF 错误码。
+/// @param failed_url 失败的 UTF-8 地址。
+/// @param error_text UTF-8 错误说明。
+void TabbedBrowserWindow::OnTabLoadError(
+    offscreen::TabManager::TabId id, int error_code,
+    const std::string& failed_url, const std::string& error_text) {
+  (void)error_code;
+  auto* active_bw = qobject_cast<offscreen::BrowserWidget*>(
+      tab_widget_->currentWidget());
+  if (!active_bw || active_bw->tab_id() != id) {
+    return;
+  }
+  statusBar()->showMessage(QStringLiteral("Failed to load %1: %2")
+                               .arg(StringToQString(failed_url),
+                                    StringToQString(error_text)));
+}
+
+/// 仅当下载所属标签为活动标签时在状态栏显示下载进展。
+/// @param id 下载所属标签。
+/// @param state 下载状态：0 开始、1 完成、2 取消。
+/// @param file_name UTF-8 文件名。
+/// @param full_path UTF-8 完整保存路径。
+void TabbedBrowserWindow::OnTabDownloadStateChanged(
+    offscreen::TabManager::TabId id, int state,
+    const std::string& file_name, const std::string& full_path) {
+  auto* active_bw = qobject_cast<offscreen::BrowserWidget*>(
+      tab_widget_->currentWidget());
+  if (!active_bw || active_bw->tab_id() != id) {
+    return;
+  }
+  switch (state) {
+    case 0:
+      statusBar()->showMessage(QStringLiteral("Download started: %1")
+                                   .arg(StringToQString(file_name)));
+      break;
+    case 1:
+      statusBar()->showMessage(QStringLiteral("Download complete: %1")
+                                   .arg(StringToQString(full_path)));
+      break;
+    case 2:
+      statusBar()->showMessage(QStringLiteral("Download cancelled: %1")
+                                   .arg(StringToQString(file_name)));
+      break;
+    default:
+      break;
   }
 }
 

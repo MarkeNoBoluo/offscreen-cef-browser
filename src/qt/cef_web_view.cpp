@@ -80,15 +80,39 @@ CefWebView::CefWebView(QWidget* parent) : QWidget(parent) {
                                         static_cast<int>(title.size())));
   });
   browser_service_->SetLoadStateChangeCallback(
-      [this](bool is_loading, bool, bool) {
+      [this](bool is_loading, bool can_go_back, bool can_go_forward) {
+        emit loadingStateChanged(is_loading, can_go_back, can_go_forward);
         if (!is_loading) {
           emit loadFinished(browser_service_->last_error().empty());
         }
       });
-  browser_service_->SetLoadErrorCallback([this](const std::string& error) {
-    emit loadFailed(QString::fromUtf8(error.data(),
-                                      static_cast<int>(error.size())));
-  });
+  browser_service_->SetLoadErrorCallback(
+      [this](int error_code, const std::string& failed_url,
+             const std::string& error_text) {
+        emit loadError(error_code,
+                       QString::fromUtf8(failed_url.data(),
+                                         static_cast<int>(failed_url.size())),
+                       QString::fromUtf8(error_text.data(),
+                                         static_cast<int>(error_text.size())));
+      });
+  browser_service_->SetDownloadStateChangeCallback(
+      [this](int state, const std::string& file_name,
+             const std::string& full_path) {
+        emit downloadStateChanged(
+            state,
+            QString::fromUtf8(file_name.data(),
+                              static_cast<int>(file_name.size())),
+            QString::fromUtf8(full_path.data(),
+                              static_cast<int>(full_path.size())));
+      });
+  browser_service_->SetContextMenuRequestedCallback(
+      [this](int view_x, int view_y) {
+        if (browser_widget_) {
+          browser_widget_->RequestContextMenu(view_x, view_y);
+        }
+      });
+  QObject::connect(browser_widget_, &BrowserWidget::contextMenuRequested, this,
+                   &CefWebView::contextMenuRequested);
 }
 
 CefWebView::~CefWebView() {
@@ -116,9 +140,21 @@ bool CefWebView::IsBrowserOpen() const {
   return browser_registered_ && browser_service_ && browser_service_->has_browser();
 }
 
+bool CefWebView::canGoBack() const {
+  return browser_service_ && browser_service_->can_go_back();
+}
+
+bool CefWebView::canGoForward() const {
+  return browser_service_ && browser_service_->can_go_forward();
+}
+
+bool CefWebView::isLoading() const {
+  return browser_service_ && browser_service_->is_loading();
+}
+
 void CefWebView::LoadUrl(const QUrl& url) {
   if (!url.isValid() || url.scheme().isEmpty()) {
-    emit loadFailed(QStringLiteral("URL must be absolute"));
+    emit loadError(0, QString(), QStringLiteral("URL must be absolute"));
     return;
   }
   close_requested_ = false;
@@ -140,6 +176,48 @@ void CefWebView::Reload() {
 void CefWebView::Stop() {
   if (browser_service_) {
     browser_service_->Stop();
+  }
+}
+
+void CefWebView::GoBack() {
+  if (browser_service_) {
+    browser_service_->GoBack();
+  }
+}
+
+void CefWebView::GoForward() {
+  if (browser_service_) {
+    browser_service_->GoForward();
+  }
+}
+
+void CefWebView::Copy() {
+  if (browser_service_) {
+    browser_service_->Copy();
+  }
+}
+
+void CefWebView::Cut() {
+  if (browser_service_) {
+    browser_service_->Cut();
+  }
+}
+
+void CefWebView::Paste() {
+  if (browser_service_) {
+    browser_service_->Paste();
+  }
+}
+
+void CefWebView::SelectAll() {
+  if (browser_service_) {
+    browser_service_->SelectAll();
+  }
+}
+
+void CefWebView::SetDownloadDirectory(const QString& path) {
+  if (browser_service_) {
+    browser_service_->SetDownloadDirectory(path.toStdWString());
   }
 }
 
@@ -179,7 +257,9 @@ void CefWebView::StartBrowserIfReady() {
     return;
   }
   if (CefRuntime::Active() == nullptr || !CefRuntime::Active()->IsInitialized()) {
-    emit loadFailed(QStringLiteral("CefRuntime must be initialized before creating CefWebView"));
+    emit loadError(
+        0, QString(),
+        QStringLiteral("CefRuntime must be initialized before creating CefWebView"));
     return;
   }
 
@@ -207,7 +287,9 @@ void CefWebView::StartBrowserIfReady() {
             browser_widget_->NativeParentHandle(), browser_widget_->CurrentViewRect(),
             browser_widget_->CurrentDeviceScaleFactor(), UrlToUtf8(pending_url_))) {
       browser_create_requested_ = false;
-      emit loadFailed(QStringLiteral("CefBrowserHost::CreateBrowser failed"));
+      emit loadError(
+          0, QString(),
+          QStringLiteral("CefBrowserHost::CreateBrowser failed"));
       return;
     }
     browser_registered_ = true;

@@ -65,6 +65,10 @@ public:
     /// @param widget 要查询的浏览器控件。
     /// @return 匹配的标识；不存在时为 kInvalidTabId。
     TabId TabIdForWidget(BrowserWidget* widget) const;
+    /// 根据控件查找其浏览器服务。
+    /// @param widget 要查询的浏览器控件。
+    /// @return 服务指针；控件无对应标签时为 nullptr。
+    BrowserService* BrowserServiceForWidget(BrowserWidget* widget) const;
     /// 判断所有标签是否已移除。
     /// @return 没有活动标签时为 true。
     bool all_closed() const;
@@ -97,6 +101,29 @@ signals:
     /// @param id 变化标签标识。
     /// @param title 最新 UTF-8 标题。
     void TabTitleChanged(TabId id, const std::string& title);
+    /// 标签加载状态变化时发射。
+    /// @param id 变化标签标识。
+    /// @param is_loading 是否正在加载。
+    /// @param can_go_back 是否可后退。
+    /// @param can_go_forward 是否可前进。
+    void TabLoadStateChanged(TabId id, bool is_loading, bool can_go_back,
+                             bool can_go_forward);
+    /// 标签主框架加载错误时发射。
+    /// @param id 变化标签标识。
+    /// @param error_code CEF 错误码。
+    /// @param failed_url 失败的 UTF-8 地址。
+    /// @param error_text UTF-8 错误说明。
+    void TabLoadError(TabId id, int error_code,
+                      const std::string& failed_url,
+                      const std::string& error_text);
+    /// 标签下载状态变化时发射。
+    /// @param id 下载所属标签。
+    /// @param state 下载状态：0 开始、1 完成、2 取消。
+    /// @param file_name UTF-8 文件名。
+    /// @param full_path UTF-8 完整保存路径。
+    void TabDownloadStateChanged(TabId id, int state,
+                                 const std::string& file_name,
+                                 const std::string& full_path);
     /// 所有 CEF 浏览器关闭且标签资源清理完毕时发射。
     void AllTabsClosed();
 
@@ -116,6 +143,29 @@ private:
     /// @param id 变化标签标识。
     /// @param title 最新 UTF-8 标题。
     void OnTabTitleChange(TabId id, const std::string& title);
+    /// 转发标签加载状态变化。
+    /// @param id 变化标签标识。
+    /// @param is_loading 是否正在加载。
+    /// @param can_go_back 是否可后退。
+    /// @param can_go_forward 是否可前进。
+    void OnTabLoadStateChange(TabId id, bool is_loading, bool can_go_back,
+                              bool can_go_forward);
+    /// 转发标签加载错误。
+    /// @param id 变化标签标识。
+    /// @param error_code CEF 错误码。
+    /// @param failed_url 失败的 UTF-8 地址。
+    /// @param error_text UTF-8 错误说明。
+    void OnTabLoadError(TabId id, int error_code,
+                        const std::string& failed_url,
+                        const std::string& error_text);
+    /// 转发标签下载状态变化。
+    /// @param id 下载所属标签。
+    /// @param state 下载状态。
+    /// @param file_name UTF-8 文件名。
+    /// @param full_path UTF-8 完整保存路径。
+    void OnTabDownloadStateChange(TabId id, int state,
+                                  const std::string& file_name,
+                                  const std::string& full_path);
     /// 连接 BrowserService 回调与管理器槽逻辑。
     /// @param entry 待连接的标签条目。
     void WireTabCallbacks(TabEntry& entry);

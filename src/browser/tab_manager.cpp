@@ -2,8 +2,10 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QMetaObject>
 #include <QPointer>
+#include <QStandardPaths>
 #include <QTimer>
 
 #include <sstream>
@@ -74,6 +76,31 @@ void TabManager::WireTabCallbacks(TabEntry& entry) {
     service->SetTitleChangeCallback([this, id](const std::string& title) {
         OnTabTitleChange(id, title);
     });
+
+    service->SetLoadStateChangeCallback(
+        [this, id](bool is_loading, bool can_go_back, bool can_go_forward) {
+            OnTabLoadStateChange(id, is_loading, can_go_back, can_go_forward);
+        });
+
+    service->SetLoadErrorCallback(
+        [this, id](int error_code, const std::string& failed_url,
+                   const std::string& error_text) {
+            OnTabLoadError(id, error_code, failed_url, error_text);
+        });
+
+    service->SetDownloadStateChangeCallback(
+        [this, id](int state, const std::string& file_name,
+                   const std::string& full_path) {
+            OnTabDownloadStateChange(id, state, file_name, full_path);
+        });
+
+    service->SetContextMenuRequestedCallback(
+        [this, id](int view_x, int view_y) {
+            auto it = tabs_by_id_.find(id);
+            if (it != tabs_by_id_.end() && it->second->widget) {
+                it->second->widget->RequestContextMenu(view_x, view_y);
+            }
+        });
 }
 
 TabManager::TabId TabManager::CreateTab(const std::string& initial_url) {
@@ -84,6 +111,18 @@ TabManager::TabId TabManager::CreateTab(const std::string& initial_url) {
     auto entry = std::make_unique<TabEntry>();
     entry->id = id;
     entry->browser_service = std::make_unique<BrowserService>();
+
+    // 下载默认存入系统下载目录，目录不可用时回退到文档目录，再不可用则由 CEF 使用默认目录。
+    QString download_dir =
+        QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (download_dir.isEmpty()) {
+        download_dir =
+            QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    }
+    if (!download_dir.isEmpty()) {
+        entry->browser_service->SetDownloadDirectory(
+            QDir::toNativeSeparators(download_dir).toStdWString());
+    }
 
     WireTabCallbacks(*entry);
 
@@ -223,6 +262,17 @@ TabManager::TabId TabManager::TabIdForWidget(BrowserWidget* widget) const {
     return (it != tab_id_by_widget_.end()) ? it->second : kInvalidTabId;
 }
 
+BrowserService* TabManager::BrowserServiceForWidget(
+    BrowserWidget* widget) const {
+    const TabId id = TabIdForWidget(widget);
+    if (id == kInvalidTabId) {
+        return nullptr;
+    }
+    auto it = tabs_by_id_.find(id);
+    return (it != tabs_by_id_.end()) ? it->second->browser_service.get()
+                                     : nullptr;
+}
+
 bool TabManager::all_closed() const {
     return tabs_by_id_.empty();
 }
@@ -333,6 +383,34 @@ void TabManager::OnTabTitleChange(TabId id, const std::string& title) {
     DiagnosticLog("TabManager::OnTabTitleChange id=" + std::to_string(id) +
                   " title=[" + title + "]");
     emit TabTitleChanged(id, title);
+}
+
+void TabManager::OnTabLoadStateChange(TabId id, bool is_loading,
+                                      bool can_go_back, bool can_go_forward) {
+    DiagnosticLog("TabManager::OnTabLoadStateChange id=" +
+                  std::to_string(id) + " is_loading=" +
+                  (is_loading ? "true" : "false") + " back=" +
+                  (can_go_back ? "true" : "false") + " forward=" +
+                  (can_go_forward ? "true" : "false"));
+    emit TabLoadStateChanged(id, is_loading, can_go_back, can_go_forward);
+}
+
+void TabManager::OnTabLoadError(TabId id, int error_code,
+                                const std::string& failed_url,
+                                const std::string& error_text) {
+    DiagnosticLog("TabManager::OnTabLoadError id=" + std::to_string(id) +
+                  " code=" + std::to_string(error_code) + " url=[" +
+                  failed_url + "] error=[" + error_text + "]");
+    emit TabLoadError(id, error_code, failed_url, error_text);
+}
+
+void TabManager::OnTabDownloadStateChange(TabId id, int state,
+                                          const std::string& file_name,
+                                          const std::string& full_path) {
+    DiagnosticLog("TabManager::OnTabDownloadStateChange id=" +
+                  std::to_string(id) + " state=" + std::to_string(state) +
+                  " name=[" + file_name + "] path=[" + full_path + "]");
+    emit TabDownloadStateChanged(id, state, file_name, full_path);
 }
 
 void TabManager::CleanupTab(TabId id) {

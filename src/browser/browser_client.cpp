@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "app/diagnostic_log.h"
+#include "include/cef_download_item.h"
 #include "include/cef_frame.h"
 
 namespace offscreen {
@@ -16,6 +17,10 @@ namespace {
 std::string CefStringToUtf8(const CefString& value) {
   return value.ToString();
 }
+
+/// ERR_ABORTED (-3) 表示导航被新请求替换，CEF 会附带触发一次 OnLoadError；
+/// 这类取消错误不向宿主转发，避免正常跳转被误报为加载失败。
+constexpr int kCefErrAborted = -3;
 
 }  // namespace
 
@@ -53,6 +58,14 @@ CefRefPtr<CefKeyboardHandler> BrowserClient::GetKeyboardHandler() {
 }
 
 CefRefPtr<CefFocusHandler> BrowserClient::GetFocusHandler() {
+  return this;
+}
+
+CefRefPtr<CefContextMenuHandler> BrowserClient::GetContextMenuHandler() {
+  return this;
+}
+
+CefRefPtr<CefDownloadHandler> BrowserClient::GetDownloadHandler() {
   return this;
 }
 
@@ -110,8 +123,74 @@ void BrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
   if (!frame || !frame->IsMain()) {
     return;
   }
+  if (static_cast<int>(errorCode) == kCefErrAborted) {
+    DiagnosticLog("BrowserClient::OnLoadError ignored ERR_ABORTED");
+    return;
+  }
   if (delegate_) {
-    delegate_->OnLoadErrorText(CefStringToUtf8(errorText));
+    delegate_->OnLoadError(static_cast<int>(errorCode),
+                           CefStringToUtf8(failedUrl),
+                           CefStringToUtf8(errorText));
+  }
+}
+
+void BrowserClient::OnBeforeContextMenu(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefContextMenuParams> params,
+    CefRefPtr<CefMenuModel> model) {
+  (void)frame;
+  DiagnosticLog("BrowserClient::OnBeforeContextMenu browser_id=" +
+                std::to_string(browser ? browser->GetIdentifier() : -1));
+  // OSR 下 CEF 无法绘制原生菜单；清空默认模型以抑制残留菜单，由宿主自绘。
+  if (model) {
+    model->Clear();
+  }
+  if (delegate_ && params) {
+    delegate_->OnContextMenuRequested(params->GetXCoord(),
+                                      params->GetYCoord());
+  }
+}
+
+void BrowserClient::OnBeforeDownload(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefDownloadItem> download_item,
+    const CefString& suggested_name,
+    CefRefPtr<CefBeforeDownloadCallback> callback) {
+  (void)download_item;
+  DiagnosticLog("BrowserClient::OnBeforeDownload browser_id=" +
+                std::to_string(browser ? browser->GetIdentifier() : -1) +
+                " suggested_name=[" + CefStringToUtf8(suggested_name) + "]");
+  if (delegate_) {
+    delegate_->OnDownloadStarted(callback, CefStringToUtf8(suggested_name));
+  }
+}
+
+void BrowserClient::OnDownloadUpdated(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefDownloadItem> download_item,
+    CefRefPtr<CefDownloadItemCallback> callback) {
+  (void)callback;
+  if (!download_item) {
+    return;
+  }
+  int state = -1;
+  if (download_item->IsComplete()) {
+    state = 1;
+  } else if (download_item->IsCanceled()) {
+    state = 2;
+  } else {
+    return;
+  }
+  const std::string file_name =
+      CefStringToUtf8(download_item->GetSuggestedFileName());
+  const std::string full_path = CefStringToUtf8(download_item->GetFullPath());
+  DiagnosticLog("BrowserClient::OnDownloadUpdated browser_id=" +
+                std::to_string(browser ? browser->GetIdentifier() : -1) +
+                " state=" + std::to_string(state) + " name=[" + file_name +
+                "] path=[" + full_path + "]");
+  if (delegate_) {
+    delegate_->OnDownloadStateChanged(state, file_name, full_path);
   }
 }
 

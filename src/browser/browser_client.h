@@ -3,7 +3,9 @@
 #include <string>
 
 #include "include/cef_client.h"
+#include "include/cef_context_menu_handler.h"
 #include "include/cef_display_handler.h"
+#include "include/cef_download_handler.h"
 #include "include/cef_focus_handler.h"
 #include "include/cef_keyboard_handler.h"
 #include "include/cef_life_span_handler.h"
@@ -19,7 +21,9 @@ class BrowserClient final : public CefClient,
                             public CefDisplayHandler,
                             public CefRequestHandler,
                             public CefKeyboardHandler,
-                            public CefFocusHandler {
+                            public CefFocusHandler,
+                            public CefContextMenuHandler,
+                            public CefDownloadHandler {
  public:
   /// BrowserClient 的宿主回调接口，隔离 CEF 回调与 Qt 业务逻辑。
   class Delegate {
@@ -48,9 +52,26 @@ class BrowserClient final : public CefClient,
     /// 接收页面标题变化。
     /// @param title 最新 UTF-8 标题。
     virtual void OnTitleChanged(const std::string& title) = 0;
-    /// 接收加载错误文本。
+    /// 接收加载错误。
+    /// @param error_code CEF 错误码。
+    /// @param failed_url 失败的 UTF-8 地址。
     /// @param error_text CEF 错误说明。
-    virtual void OnLoadErrorText(const std::string& error_text) = 0;
+    virtual void OnLoadError(int error_code,
+                             const std::string& failed_url,
+                             const std::string& error_text) = 0;
+    /// 接收开始下载请求。
+    /// @param callback 下载继续回调。
+    /// @param suggested_name 建议的 UTF-8 文件名。
+    virtual void OnDownloadStarted(
+        CefRefPtr<CefBeforeDownloadCallback> callback,
+        const std::string& suggested_name) = 0;
+    /// 接收下载状态变化。
+    /// @param state 下载状态：0 开始、1 完成、2 取消。
+    /// @param file_name UTF-8 文件名。
+    /// @param full_path UTF-8 完整保存路径。
+    virtual void OnDownloadStateChanged(int state,
+                                        const std::string& file_name,
+                                        const std::string& full_path) = 0;
     /// 接收渲染进程异常退出通知。
     virtual void OnRenderProcessTerminated() = 0;
     /// 接收 CEF 光标变化。
@@ -66,6 +87,11 @@ class BrowserClient final : public CefClient,
     /// 接收弹出新窗口请求。
     /// @param url 弹出目标的 UTF-8 地址。
     virtual void OnPopupRequest(const std::string& url) = 0;
+    /// 接收 CEF 即将显示默认上下文菜单的通知。
+    /// 仅当页面未拦截右键（未 preventDefault contextmenu 事件）时回调。
+    /// @param view_x 触发点在视图中的逻辑 x 坐标（DIP）。
+    /// @param view_y 触发点在视图中的逻辑 y 坐标（DIP）。
+    virtual void OnContextMenuRequested(int view_x, int view_y) = 0;
   };
 
   /// 创建 CEF 客户端。
@@ -95,6 +121,12 @@ class BrowserClient final : public CefClient,
   /// 返回焦点处理器。
   /// @return 当前客户端引用。
   CefRefPtr<CefFocusHandler> GetFocusHandler() override;
+  /// 返回上下文菜单处理器。
+  /// @return 当前客户端引用。
+  CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override;
+  /// 返回下载处理器。
+  /// @return 当前客户端引用。
+  CefRefPtr<CefDownloadHandler> GetDownloadHandler() override;
 
   /// 转发浏览器创建完成事件。
   /// @param browser 新创建的浏览器。
@@ -126,6 +158,31 @@ class BrowserClient final : public CefClient,
                    ErrorCode errorCode,
                    const CefString& errorText,
                    const CefString& failedUrl) override;
+  /// 清空 CEF 默认上下文菜单，避免与宿主自绘菜单叠加。
+  /// @param browser 触发菜单的浏览器。
+  /// @param frame 触发菜单的框架。
+  /// @param params 菜单上下文信息。
+  /// @param model 默认菜单模型。
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
+                           CefRefPtr<CefFrame> frame,
+                           CefRefPtr<CefContextMenuParams> params,
+                           CefRefPtr<CefMenuModel> model) override;
+  /// 记录并开始下载。
+  /// @param browser 发起下载的浏览器。
+  /// @param download_item 下载项。
+  /// @param suggested_name 建议文件名。
+  /// @param callback 下载继续回调。
+  void OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefDownloadItem> download_item,
+                        const CefString& suggested_name,
+                        CefRefPtr<CefBeforeDownloadCallback> callback) override;
+  /// 下载完成或取消时转发状态。
+  /// @param browser 发起下载的浏览器。
+  /// @param download_item 下载项。
+  /// @param callback 下载控制回调。
+  void OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
+                         CefRefPtr<CefDownloadItem> download_item,
+                         CefRefPtr<CefDownloadItemCallback> callback) override;
   /// 转发页面标题变化。
   /// @param browser 发生变化的浏览器。
   /// @param title CEF 标题文本。

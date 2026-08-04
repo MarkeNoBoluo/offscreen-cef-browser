@@ -199,6 +199,24 @@ void BrowserService::SetLoadErrorCallback(LoadErrorCallback callback) {
   load_error_callback_ = std::move(callback);
 }
 
+void BrowserService::SetDownloadDirectory(const std::wstring& path) {
+  DiagnosticLog("BrowserService::SetDownloadDirectory path_empty=" +
+                std::string(path.empty() ? "true" : "false"));
+  download_dir_ = path;
+}
+
+void BrowserService::SetDownloadStateChangeCallback(
+    DownloadStateChangeCallback callback) {
+  DiagnosticLog("BrowserService::SetDownloadStateChangeCallback");
+  download_state_change_callback_ = std::move(callback);
+}
+
+void BrowserService::SetContextMenuRequestedCallback(
+    ContextMenuRequestedCallback callback) {
+  DiagnosticLog("BrowserService::SetContextMenuRequestedCallback");
+  context_menu_requested_callback_ = std::move(callback);
+}
+
 void BrowserService::Resize(BrowserViewRect view_rect,
                              double device_scale_factor) {
   static std::atomic<int> resize_count{0};
@@ -248,6 +266,46 @@ void BrowserService::Stop() {
   }
 }
 
+void BrowserService::GoBack() {
+  DiagnosticLog("BrowserService::GoBack has_browser=" +
+                std::string(browser_ ? "true" : "false"));
+  if (browser_) {
+    browser_->GoBack();
+  }
+}
+
+void BrowserService::GoForward() {
+  DiagnosticLog("BrowserService::GoForward has_browser=" +
+                std::string(browser_ ? "true" : "false"));
+  if (browser_) {
+    browser_->GoForward();
+  }
+}
+
+void BrowserService::Copy() {
+  if (browser_ && browser_->GetMainFrame()) {
+    browser_->GetMainFrame()->Copy();
+  }
+}
+
+void BrowserService::Cut() {
+  if (browser_ && browser_->GetMainFrame()) {
+    browser_->GetMainFrame()->Cut();
+  }
+}
+
+void BrowserService::Paste() {
+  if (browser_ && browser_->GetMainFrame()) {
+    browser_->GetMainFrame()->Paste();
+  }
+}
+
+void BrowserService::SelectAll() {
+  if (browser_ && browser_->GetMainFrame()) {
+    browser_->GetMainFrame()->SelectAll();
+  }
+}
+
 bool BrowserService::TryCloseBrowser() {
   DiagnosticLog("BrowserService::TryCloseBrowser has_browser=" +
                 std::string(browser_ ? "true" : "false") +
@@ -277,6 +335,18 @@ bool BrowserService::has_browser() const {
 
 bool BrowserService::is_closing() const {
   return is_closing_;
+}
+
+bool BrowserService::can_go_back() const {
+  return can_go_back_;
+}
+
+bool BrowserService::can_go_forward() const {
+  return can_go_forward_;
+}
+
+bool BrowserService::is_loading() const {
+  return is_loading_;
 }
 
 std::string BrowserService::title() const {
@@ -591,11 +661,15 @@ void BrowserService::OnTitleChanged(const std::string& title) {
   }
 }
 
-void BrowserService::OnLoadErrorText(const std::string& error_text) {
-  DiagnosticLog("BrowserService::OnLoadErrorText error=[" + error_text + "]");
+void BrowserService::OnLoadError(int error_code,
+                                 const std::string& failed_url,
+                                 const std::string& error_text) {
+  DiagnosticLog("BrowserService::OnLoadError code=" +
+                std::to_string(error_code) + " url=[" + failed_url +
+                "] error=[" + error_text + "]");
   last_error_ = error_text;
   if (load_error_callback_) {
-    load_error_callback_(error_text);
+    load_error_callback_(error_code, failed_url, error_text);
   }
 }
 
@@ -626,6 +700,42 @@ void BrowserService::OnPopupRequest(const std::string& url) {
   DiagnosticLog("BrowserService::OnPopupRequest url=[" + url + "]");
   if (popup_request_callback_) {
     popup_request_callback_(url);
+  }
+}
+
+void BrowserService::OnDownloadStarted(
+    CefRefPtr<CefBeforeDownloadCallback> callback,
+    const std::string& suggested_name) {
+  DiagnosticLog("BrowserService::OnDownloadStarted suggested_name=[" +
+                suggested_name + "] has_dir=" +
+                std::string(download_dir_.empty() ? "false" : "true"));
+  std::wstring download_path;
+  if (!download_dir_.empty()) {
+    download_path =
+        download_dir_ + L"\\" + CefString(suggested_name).ToWString();
+  }
+  if (callback) {
+    callback->Continue(download_path, false);
+  }
+  OnDownloadStateChanged(0, suggested_name, CefString(download_path).ToString());
+}
+
+void BrowserService::OnDownloadStateChanged(int state,
+                                            const std::string& file_name,
+                                            const std::string& full_path) {
+  DiagnosticLog("BrowserService::OnDownloadStateChanged state=" +
+                std::to_string(state) + " name=[" + file_name + "] path=[" +
+                full_path + "]");
+  if (download_state_change_callback_) {
+    download_state_change_callback_(state, file_name, full_path);
+  }
+}
+
+void BrowserService::OnContextMenuRequested(int view_x, int view_y) {
+  DiagnosticLog("BrowserService::OnContextMenuRequested x=" +
+                std::to_string(view_x) + " y=" + std::to_string(view_y));
+  if (context_menu_requested_callback_) {
+    context_menu_requested_callback_(view_x, view_y);
   }
 }
 

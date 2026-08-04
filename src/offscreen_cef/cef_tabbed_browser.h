@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPoint>
 #include <QWidget>
 
 class QTabWidget;
@@ -38,6 +39,22 @@ class CefTabbedBrowser final : public QWidget {
   void CloseTab(int index);
   /// 请求关闭全部网页标签。
   void CloseAllTabs();
+  /// 后退当前网页。
+  void GoBack();
+  /// 前进当前网页。
+  void GoForward();
+  /// 重新加载当前网页。
+  void Reload();
+  /// 停止当前网页加载。
+  void Stop();
+  /// 复制当前网页选中文本。
+  void Copy();
+  /// 剪切当前网页选中文本。
+  void Cut();
+  /// 粘贴剪贴板文本到当前网页。
+  void Paste();
+  /// 全选当前网页文本。
+  void SelectAll();
 
  signals:
   /// 当前标签地址变化时发射。
@@ -46,6 +63,27 @@ class CefTabbedBrowser final : public QWidget {
   /// 当前标签标题变化时发射。
   /// @param title 当前标签标题。
   void currentTitleChanged(const QString& title);
+  /// 当前网页加载状态变化时发射。
+  /// @param isLoading 是否正在加载。
+  /// @param canGoBack 是否可后退。
+  /// @param canGoForward 是否可前进。
+  void currentLoadingStateChanged(bool isLoading, bool canGoBack,
+                                  bool canGoForward);
+  /// 当前网页加载错误时发射。
+  /// @param errorCode CEF 错误码。
+  /// @param failedUrl 失败的地址。
+  /// @param errorText 错误说明。
+  void currentLoadError(int errorCode, const QString& failedUrl,
+                        const QString& errorText);
+  /// 当前网页下载状态变化时发射。
+  /// @param state 下载状态：0 开始、1 完成、2 取消。
+  /// @param fileName 文件名。
+  /// @param fullPath 完整保存路径。
+  void currentDownloadStateChanged(int state, const QString& fileName,
+                                   const QString& fullPath);
+  /// 当前网页请求右键菜单时发射。
+  /// @param globalPos 菜单出现的全局坐标。
+  void currentContextMenuRequested(const QPoint& globalPos);
   /// 全部网页标签关闭时发射。
   void allTabsClosed();
 

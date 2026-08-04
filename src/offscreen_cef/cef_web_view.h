@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include <QPoint>
+#include <QString>
 #include <QUrl>
 #include <QWidget>
 
@@ -33,6 +35,15 @@ class CefWebView final : public QWidget {
   /// 查询 CEF 浏览器是否已创建且仍打开。
   /// @return 浏览器打开时为 true。
   bool IsBrowserOpen() const;
+  /// 查询历史中是否有上一页。
+  /// @return 可后退时为 true。
+  bool canGoBack() const;
+  /// 查询历史中是否有下一页。
+  /// @return 可前进时为 true。
+  bool canGoForward() const;
+  /// 查询是否正在加载。
+  /// @return 正在加载时为 true。
+  bool isLoading() const;
 
  public slots:
   /// 加载绝对 URL；未创建浏览器时会延迟创建。
@@ -42,6 +53,21 @@ class CefWebView final : public QWidget {
   void Reload();
   /// 停止当前导航请求。
   void Stop();
+  /// 后退到历史上一页。
+  void GoBack();
+  /// 前进到历史下一页。
+  void GoForward();
+  /// 复制选中文本。
+  void Copy();
+  /// 剪切选中文本。
+  void Cut();
+  /// 粘贴剪贴板文本。
+  void Paste();
+  /// 全选页面文本。
+  void SelectAll();
+  /// 设置下载保存目录。
+  /// @param path 下载目录路径。
+  void SetDownloadDirectory(const QString& path);
   /// 异步请求关闭 CEF 浏览器。
   void CloseBrowser();
 
@@ -55,9 +81,26 @@ class CefWebView final : public QWidget {
   /// 页面结束加载时发射。
   /// @param ok 加载没有记录错误时为 true。
   void loadFinished(bool ok);
+  /// 页面加载状态变化时发射。
+  /// @param isLoading 是否正在加载。
+  /// @param canGoBack 是否可后退。
+  /// @param canGoForward 是否可前进。
+  void loadingStateChanged(bool isLoading, bool canGoBack, bool canGoForward);
   /// 页面加载或创建失败时发射。
-  /// @param error 错误说明。
-  void loadFailed(const QString& error);
+  /// @param errorCode CEF 错误码。
+  /// @param failedUrl 失败的地址。
+  /// @param errorText 错误说明。
+  void loadError(int errorCode, const QString& failedUrl,
+                 const QString& errorText);
+  /// 下载状态变化时发射。
+  /// @param state 下载状态：0 开始、1 完成、2 取消。
+  /// @param fileName 文件名。
+  /// @param fullPath 完整保存路径。
+  void downloadStateChanged(int state, const QString& fileName,
+                            const QString& fullPath);
+  /// 用户请求右键菜单时发射。
+  /// @param globalPos 菜单出现的全局坐标。
+  void contextMenuRequested(const QPoint& globalPos);
   /// 页面请求弹出新窗口时发射。
   /// @param url 新窗口目标地址。
   void newWindowRequested(const QUrl& url);

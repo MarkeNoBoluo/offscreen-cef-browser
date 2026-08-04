@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include <QPoint>
 #include <QWidget>
 #include <windows.h>
 
@@ -13,6 +14,7 @@
 #include "include/cef_drag_data.h"
 #include "include/cef_render_handler.h"
 
+class QContextMenuEvent;
 class QDragEnterEvent;
 class QDragLeaveEvent;
 class QDragMoveEvent;
@@ -71,6 +73,10 @@ class BrowserWidget final : public QWidget {
   /// @param cursor_type CEF 光标类型。
   /// @param cursor_handle 可选的 Win32 自定义光标句柄。
   void SetCefCursor(int cursor_type, HCURSOR cursor_handle);
+  /// 接收 CEF 层"页面未拦截右键"通知，延迟一个事件循环后发射 contextMenuRequested。
+  /// @param view_x 视图内逻辑 x 坐标（坐标回退源）。
+  /// @param view_y 视图内逻辑 y 坐标（坐标回退源）。
+  void RequestContextMenu(int view_x, int view_y);
 
   /// 处理 TabManager 已筛选的原生 IME 消息。
   /// @param windows_message Win32 MSG 结构。
@@ -84,6 +90,11 @@ class BrowserWidget final : public QWidget {
   /// 获取所属标签标识。
   /// @return 当前标签标识，无效时为 kInvalidTabId。
   TabManager::TabId tab_id() const { return tab_id_; }
+
+ signals:
+  /// 用户请求右键菜单时发射。
+  /// @param globalPos 菜单出现的全局坐标。
+  void contextMenuRequested(const QPoint& globalPos);
 
  protected:
   /// 将 Qt 尺寸和设备缩放变化通知浏览器服务。
@@ -112,6 +123,9 @@ class BrowserWidget final : public QWidget {
   /// 通知 CEF 鼠标已离开视图。
   /// @param event Qt 离开事件。
   void leaveEvent(QEvent* event) override;
+  /// 将右键菜单请求交给宿主绘制。
+  /// @param event Qt 右键菜单事件。
+  void contextMenuEvent(QContextMenuEvent* event) override;
   /// 区分预编辑与普通文本后转发按键按下。
   /// @param event Qt 键盘事件。
   void keyPressEvent(QKeyEvent* event) override;
@@ -173,6 +187,7 @@ class BrowserWidget final : public QWidget {
       DRAG_OPERATION_NONE;
   CefRenderHandler::DragOperation cef_drag_current_op_ = DRAG_OPERATION_NONE;
   QPoint last_mouse_pos_;
+  QPoint last_context_menu_pos_;
 };
 
 }  // namespace offscreen

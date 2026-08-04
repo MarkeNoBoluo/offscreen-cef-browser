@@ -47,6 +47,33 @@ CefWebView* CefTabbedBrowser::OpenTab(const QUrl& url, bool activate) {
           [this](const QUrl& popup_url) { OpenTab(popup_url, true); });
   connect(view, &CefWebView::browserClosed, this,
           [this, view]() { OnTabClosed(view); });
+  connect(view, &CefWebView::loadingStateChanged, this,
+          [this, view](bool isLoading, bool canGoBack, bool canGoForward) {
+            if (tabs_->currentWidget() == view) {
+              emit currentLoadingStateChanged(isLoading, canGoBack,
+                                              canGoForward);
+            }
+          });
+  connect(view, &CefWebView::loadError, this,
+          [this, view](int errorCode, const QString& failedUrl,
+                       const QString& errorText) {
+            if (tabs_->currentWidget() == view) {
+              emit currentLoadError(errorCode, failedUrl, errorText);
+            }
+          });
+  connect(view, &CefWebView::downloadStateChanged, this,
+          [this, view](int state, const QString& fileName,
+                       const QString& fullPath) {
+            if (tabs_->currentWidget() == view) {
+              emit currentDownloadStateChanged(state, fileName, fullPath);
+            }
+          });
+  connect(view, &CefWebView::contextMenuRequested, this,
+          [this, view](const QPoint& globalPos) {
+            if (tabs_->currentWidget() == view) {
+              emit currentContextMenuRequested(globalPos);
+            }
+          });
 
   if (activate) {
     tabs_->setCurrentIndex(index);
@@ -109,6 +136,56 @@ void CefTabbedBrowser::UpdateCurrentState(int index) {
   if (view) {
     emit currentUrlChanged(view->url());
     emit currentTitleChanged(view->title());
+    emit currentLoadingStateChanged(view->isLoading(), view->canGoBack(),
+                                    view->canGoForward());
+  }
+}
+
+void CefTabbedBrowser::GoBack() {
+  if (auto* view = CurrentView()) {
+    view->GoBack();
+  }
+}
+
+void CefTabbedBrowser::GoForward() {
+  if (auto* view = CurrentView()) {
+    view->GoForward();
+  }
+}
+
+void CefTabbedBrowser::Reload() {
+  if (auto* view = CurrentView()) {
+    view->Reload();
+  }
+}
+
+void CefTabbedBrowser::Stop() {
+  if (auto* view = CurrentView()) {
+    view->Stop();
+  }
+}
+
+void CefTabbedBrowser::Copy() {
+  if (auto* view = CurrentView()) {
+    view->Copy();
+  }
+}
+
+void CefTabbedBrowser::Cut() {
+  if (auto* view = CurrentView()) {
+    view->Cut();
+  }
+}
+
+void CefTabbedBrowser::Paste() {
+  if (auto* view = CurrentView()) {
+    view->Paste();
+  }
+}
+
+void CefTabbedBrowser::SelectAll() {
+  if (auto* view = CurrentView()) {
+    view->SelectAll();
   }
 }
 
