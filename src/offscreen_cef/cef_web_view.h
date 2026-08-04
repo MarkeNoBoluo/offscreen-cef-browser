@@ -9,6 +9,8 @@
 
 #include <windows.h>
 
+#include "browser/render_stats.h"
+
 namespace offscreen {
 
 class BrowserImeHandler;
@@ -44,6 +46,12 @@ class CefWebView final : public QWidget {
   /// 查询是否正在加载。
   /// @return 正在加载时为 true。
   bool isLoading() const;
+  /// 开启或关闭渲染性能统计采集。
+  /// @param enabled 是否启用。
+  void SetRenderStatsEnabled(bool enabled);
+  /// 获取当前渲染性能快照（不重置窗口统计）。
+  /// @return 渲染统计快照。
+  RenderStatsSnapshot renderStatsSnapshot() const;
 
  public slots:
   /// 加载绝对 URL；未创建浏览器时会延迟创建。
@@ -106,6 +114,9 @@ class CefWebView final : public QWidget {
   void newWindowRequested(const QUrl& url);
   /// CEF 浏览器完全关闭时发射。
   void browserClosed();
+  /// 周期（每秒）发射当前页面渲染性能快照；空闲时不发射。
+  /// @param snapshot 渲染统计快照。
+  void renderStatsUpdated(const RenderStatsSnapshot& snapshot);
 
  protected:
   /// 控件显示后尝试创建待加载的浏览器。

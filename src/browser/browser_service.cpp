@@ -7,6 +7,7 @@
 #include "app/diagnostic_log.h"
 #include "browser/browser_frame.h"
 #include "browser/browser_input_mapping.h"
+#include "browser/render_stats.h"
 #include "include/cef_frame.h"
 
 namespace offscreen {
@@ -61,7 +62,8 @@ CefMouseEvent MakeCefMouseEvent(int x, int y, int qt_buttons,
 }  // namespace
 
 BrowserService::BrowserService()
-    : frame_(std::make_shared<BrowserFrame>()) {
+    : frame_(std::make_shared<BrowserFrame>()),
+      render_stats_(std::make_shared<RenderStats>()) {
   DiagnosticLog("BrowserService constructed frame=" +
                 HexValue(reinterpret_cast<uintptr_t>(frame_.get())));
 }
@@ -117,7 +119,8 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
   }
   render_handler_ = new OsrRenderHandler(initial_view_rect,
                                           initial_device_scale_factor, frame_,
-                                          paint_update_callback_);
+                                          paint_update_callback_,
+                                          render_stats_);
   if (ime_composition_range_changed_callback_) {
     render_handler_->SetImeCompositionRangeChangedCallback(
         ime_composition_range_changed_callback_);
@@ -363,6 +366,22 @@ std::string BrowserService::last_error() const {
 
 std::shared_ptr<BrowserFrame> BrowserService::frame() const {
   return frame_;
+}
+
+std::shared_ptr<RenderStats> BrowserService::render_stats() const {
+  return render_stats_;
+}
+
+void BrowserService::SetRenderStatsEnabled(bool enabled) {
+  if (enabled) {
+    render_stats_->Enable();
+  } else {
+    render_stats_->Disable();
+  }
+}
+
+bool BrowserService::render_stats_enabled() const {
+  return render_stats_->enabled();
 }
 
 void BrowserService::SendRawKeyDown(int windows_key_code,

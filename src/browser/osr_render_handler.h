@@ -11,6 +11,8 @@
 
 namespace offscreen {
 
+class RenderStats;
+
 using PaintUpdateCallback =
     std::function<void(const std::vector<BrowserViewRect>&)>;
 using ImeCompositionRangeChangedCallback =
@@ -38,7 +40,8 @@ class OsrRenderHandler final : public CefRenderHandler {
   OsrRenderHandler(BrowserViewRect view_rect,
                    double device_scale_factor,
                    std::shared_ptr<BrowserFrame> frame,
-                   PaintUpdateCallback paint_update_callback);
+                   PaintUpdateCallback paint_update_callback,
+                   std::shared_ptr<RenderStats> render_stats);
 
   /// 更新 CEF 查询的视图尺寸与缩放。
   /// @param view_rect 最新逻辑视图矩形。
@@ -106,6 +109,7 @@ class OsrRenderHandler final : public CefRenderHandler {
   BrowserViewRect view_rect_;
   double device_scale_factor_ = 1.0;
   std::shared_ptr<BrowserFrame> frame_;
+  std::shared_ptr<RenderStats> render_stats_;
   PaintUpdateCallback paint_update_callback_;
   ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;
   StartDraggingCallback start_dragging_callback_;

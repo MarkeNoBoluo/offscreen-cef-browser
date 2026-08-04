@@ -28,6 +28,7 @@
 #include "app/browser_window_title.h"
 #include "app/diagnostic_log.h"
 #include "browser/browser_service.h"
+#include "browser/osr_render_log.h"
 #include "browser/tab_manager.h"
 #include "offscreen_cef/cef_runtime.h"
 #include "qt/browser_widget.h"
@@ -600,6 +601,7 @@ void TabbedBrowserWindow::OnTabDownloadStateChanged(
 /// @return 子进程退出码、Qt 事件循环结果或初始化失败码。
 int main(int argc, char* argv[]) {
   offscreen::SetDiagnosticLogFileToApplicationDirectory();
+  offscreen::SetOsrRenderLogFileToApplicationDirectory();
   offscreen::DiagnosticLog("main entered");
   // CEF 子进程必须在创建 QApplication 前分流；子进程不进入宿主的 Qt 事件循环。
   if (const auto exit_code = offscreen::CefRuntime::ExecuteSubprocess(

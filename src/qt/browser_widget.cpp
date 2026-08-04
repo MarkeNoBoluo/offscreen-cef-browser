@@ -155,6 +155,10 @@ BrowserWidget::BrowserWidget(QWidget* parent) : QWidget(parent) {
   setFocusPolicy(Qt::StrongFocus);
   setMouseTracking(true);
   setAutoFillBackground(false);
+  stats_timer_ = new QTimer(this);
+  stats_timer_->setInterval(1000);
+  connect(stats_timer_, &QTimer::timeout, this, &BrowserWidget::EmitRenderStats);
+  stats_timer_->start();
   DiagnosticLog("BrowserWidget constructed");
 }
 
@@ -185,6 +189,20 @@ void BrowserWidget::SetFrame(std::shared_ptr<BrowserFrame> frame) {
   frame_ = std::move(frame);
   DiagnosticLog("BrowserWidget::SetFrame frame=" +
                 HexValue(reinterpret_cast<uintptr_t>(frame_.get())));
+}
+
+void BrowserWidget::SetRenderStats(std::shared_ptr<RenderStats> stats) {
+  render_stats_ = std::move(stats);
+}
+
+void BrowserWidget::EmitRenderStats() {
+  if (!render_stats_) return;
+  const RenderStatsSnapshot snapshot = render_stats_->SnapshotAndResetWindow();
+  if (snapshot.window_frames == 0 && snapshot.window_paint_events == 0) {
+    return;
+  }
+  DiagnosticLog(FormatRenderStatsSummary(snapshot));
+  emit renderStatsUpdated(snapshot);
 }
 
 void BrowserWidget::SetResizeCallback(ResizeCallback resize_callback) {
@@ -665,6 +683,7 @@ void BrowserWidget::resizeEvent(QResizeEvent* event) {
 void BrowserWidget::paintEvent(QPaintEvent* event) {
   QPainter painter(this);
   static std::atomic<int> paint_event_count{0};
+  RenderStats* const stats = render_stats_.get();
 
   if (!frame_) {
     if (ShouldDiagnosticLog(paint_event_count, 40, 100)) {
@@ -678,7 +697,16 @@ void BrowserWidget::paintEvent(QPaintEvent* event) {
     return;
   }
 
+  if (stats) {
+    stats->OnPaintEventBegin();
+  }
+  if (stats) {
+    stats->OnSnapshotBegin();
+  }
   BrowserFrameSnapshot snapshot = frame_->Snapshot();
+  if (stats) {
+    stats->OnSnapshotDone();
+  }
   if (ShouldDiagnosticLog(paint_event_count, 40, 100)) {
     std::ostringstream stream;
     stream << "BrowserWidget::paintEvent has_view="
@@ -700,14 +728,27 @@ void BrowserWidget::paintEvent(QPaintEvent* event) {
 
   if (!snapshot.has_view) {
     painter.fillRect(rect(), QColor(240, 240, 240));
+    if (stats) {
+      stats->OnPaintEventEnd();
+    }
     return;
   }
 
+  if (stats) {
+    stats->OnDrawImageBegin();
+  }
   painter.drawImage(QPoint(0, 0), snapshot.view_image);
 
   if (snapshot.popup_visible && !snapshot.popup_image.isNull()) {
     painter.drawImage(QPoint(snapshot.popup_rect.x, snapshot.popup_rect.y),
                       snapshot.popup_image);
+  }
+  if (stats) {
+    stats->OnDrawImageDone();
+  }
+
+  if (stats) {
+    stats->OnPaintEventEnd();
   }
 }
 

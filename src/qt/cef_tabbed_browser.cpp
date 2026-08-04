@@ -74,6 +74,12 @@ CefWebView* CefTabbedBrowser::OpenTab(const QUrl& url, bool activate) {
               emit currentContextMenuRequested(globalPos);
             }
           });
+  connect(view, &CefWebView::renderStatsUpdated, this,
+          [this, view](const RenderStatsSnapshot& snapshot) {
+            if (tabs_->currentWidget() == view) {
+              emit currentRenderStatsUpdated(snapshot);
+            }
+          });
 
   if (activate) {
     tabs_->setCurrentIndex(index);

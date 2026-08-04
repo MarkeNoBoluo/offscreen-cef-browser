@@ -1,10 +1,11 @@
 #include "browser/osr_render_handler.h"
 
 #include <algorithm>
-#include <atomic>
 #include <sstream>
 
 #include "app/diagnostic_log.h"
+#include "browser/osr_render_log.h"
+#include "browser/render_stats.h"
 
 namespace offscreen {
 
@@ -12,10 +13,12 @@ OsrRenderHandler::OsrRenderHandler(
     BrowserViewRect view_rect,
     double device_scale_factor,
     std::shared_ptr<BrowserFrame> frame,
-    PaintUpdateCallback paint_update_callback)
+    PaintUpdateCallback paint_update_callback,
+    std::shared_ptr<RenderStats> render_stats)
     : view_rect_(view_rect),
       device_scale_factor_(NormalizeDeviceScaleFactor(device_scale_factor)),
       frame_(std::move(frame)),
+      render_stats_(std::move(render_stats)),
       paint_update_callback_(std::move(paint_update_callback)) {
   std::ostringstream stream;
   stream << "OsrRenderHandler constructed rect=" << view_rect_.x << ","
@@ -32,14 +35,14 @@ void OsrRenderHandler::SetViewRect(BrowserViewRect view_rect,
   std::lock_guard<std::mutex> lock(mutex_);
   view_rect_ = view_rect;
   device_scale_factor_ = NormalizeDeviceScaleFactor(device_scale_factor);
-  static std::atomic<int> set_rect_count{0};
-  if (ShouldDiagnosticLog(set_rect_count, 20, 50)) {
-    std::ostringstream stream;
-    stream << "OsrRenderHandler::SetViewRect rect=" << view_rect_.x << ","
-           << view_rect_.y << " " << view_rect_.width << "x"
-           << view_rect_.height << " scale=" << device_scale_factor_;
-    DiagnosticLog(stream.str());
-  }
+  OsrRenderLogRecord record;
+  record.event = "SetViewRect";
+  record.x = view_rect_.x;
+  record.y = view_rect_.y;
+  record.w = view_rect_.width;
+  record.h = view_rect_.height;
+  record.scale = device_scale_factor_;
+  OsrRenderLogWrite(record);
 }
 
 BrowserViewRect OsrRenderHandler::view_rect() const {
@@ -69,14 +72,14 @@ void OsrRenderHandler::GetViewRect(CefRefPtr<CefBrowser> browser,
                                     CefRect& rect) {
   std::lock_guard<std::mutex> lock(mutex_);
   rect = CefRect(view_rect_.x, view_rect_.y, view_rect_.width, view_rect_.height);
-  static std::atomic<int> get_view_rect_count{0};
-  if (ShouldDiagnosticLog(get_view_rect_count, 20, 100)) {
-    std::ostringstream stream;
-    stream << "OsrRenderHandler::GetViewRect browser_id="
-           << (browser ? browser->GetIdentifier() : -1) << " rect=" << rect.x
-           << "," << rect.y << " " << rect.width << "x" << rect.height;
-    DiagnosticLog(stream.str());
-  }
+  OsrRenderLogRecord record;
+  record.event = "GetViewRect";
+  record.browser_id = browser ? browser->GetIdentifier() : -1;
+  record.x = rect.x;
+  record.y = rect.y;
+  record.w = rect.width;
+  record.h = rect.height;
+  OsrRenderLogWrite(record);
 }
 
 bool OsrRenderHandler::GetScreenInfo(CefRefPtr<CefBrowser> browser,
@@ -86,24 +89,24 @@ bool OsrRenderHandler::GetScreenInfo(CefRefPtr<CefBrowser> browser,
   screen_info.rect = CefRect(view_rect_.x, view_rect_.y, view_rect_.width,
                               view_rect_.height);
   screen_info.available_rect = screen_info.rect;
-  static std::atomic<int> screen_info_count{0};
-  if (ShouldDiagnosticLog(screen_info_count, 20, 100)) {
-    std::ostringstream stream;
-    stream << "OsrRenderHandler::GetScreenInfo browser_id="
-           << (browser ? browser->GetIdentifier() : -1)
-           << " device_scale_factor=" << screen_info.device_scale_factor
-           << " rect=" << screen_info.rect.x << "," << screen_info.rect.y
-           << " " << screen_info.rect.width << "x"
-           << screen_info.rect.height;
-    DiagnosticLog(stream.str());
-  }
+  OsrRenderLogRecord record;
+  record.event = "GetScreenInfo";
+  record.browser_id = browser ? browser->GetIdentifier() : -1;
+  record.x = screen_info.rect.x;
+  record.y = screen_info.rect.y;
+  record.w = screen_info.rect.width;
+  record.h = screen_info.rect.height;
+  record.scale = screen_info.device_scale_factor;
+  OsrRenderLogWrite(record);
   return true;
 }
 
 void OsrRenderHandler::OnPopupShow(CefRefPtr<CefBrowser> browser, bool show) {
-  DiagnosticLog("OsrRenderHandler::OnPopupShow browser_id=" +
-                std::to_string(browser ? browser->GetIdentifier() : -1) +
-                " show=" + (show ? "true" : "false"));
+  OsrRenderLogRecord record;
+  record.event = "OnPopupShow";
+  record.browser_id = browser ? browser->GetIdentifier() : -1;
+  record.show = show ? "true" : "false";
+  OsrRenderLogWrite(record);
   if (frame_) {
     frame_->SetPopupVisible(show);
   }
@@ -114,11 +117,14 @@ void OsrRenderHandler::OnPopupShow(CefRefPtr<CefBrowser> browser, bool show) {
 
 void OsrRenderHandler::OnPopupSize(CefRefPtr<CefBrowser> browser,
                                     const CefRect& rect) {
-  std::ostringstream stream;
-  stream << "OsrRenderHandler::OnPopupSize browser_id="
-         << (browser ? browser->GetIdentifier() : -1) << " rect=" << rect.x
-         << "," << rect.y << " " << rect.width << "x" << rect.height;
-  DiagnosticLog(stream.str());
+  OsrRenderLogRecord record;
+  record.event = "OnPopupSize";
+  record.browser_id = browser ? browser->GetIdentifier() : -1;
+  record.x = rect.x;
+  record.y = rect.y;
+  record.w = rect.width;
+  record.h = rect.height;
+  OsrRenderLogWrite(record);
   if (frame_) {
     frame_->SetPopupRect(
         BrowserViewRect{rect.x, rect.y, rect.width, rect.height});
@@ -147,31 +153,56 @@ void OsrRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser,
     scale = device_scale_factor_;
   }
 
-  std::vector<BrowserViewRect> dip_rects;
-  static std::atomic<int> paint_count{0};
-  if (ShouldDiagnosticLog(paint_count, 40, 100)) {
-    std::ostringstream stream;
-    stream << "OsrRenderHandler::OnPaint browser_id="
-           << (browser ? browser->GetIdentifier() : -1)
-           << " type=" << (type == PET_VIEW ? "PET_VIEW" : "PET_POPUP")
-           << " size=" << width << "x" << height << " scale=" << scale
-           << " dirty_count=" << dirtyRects.size();
-    if (!dirtyRects.empty()) {
-      const auto& first = dirtyRects.front();
-      stream << " first_dirty=" << first.x << "," << first.y << " "
-             << first.width << "x" << first.height;
-    }
-    DiagnosticLog(stream.str());
+  int64_t dirty_area_px = 0;
+  for (const auto& r : dirtyRects) {
+    dirty_area_px += static_cast<int64_t>(r.width) * r.height;
+  }
+  if (render_stats_) {
+    render_stats_->OnPaintBegin(width, height,
+                                static_cast<int>(dirtyRects.size()),
+                                dirty_area_px, type == PET_POPUP);
   }
 
+  OsrRenderLogRecord record;
+  record.event = "OnPaint";
+  record.browser_id = browser ? browser->GetIdentifier() : -1;
+  record.w = width;
+  record.h = height;
+  record.scale = scale;
+  record.type = type == PET_VIEW ? "PET_VIEW" : "PET_POPUP";
+  record.dirty_count = static_cast<int>(dirtyRects.size());
+  record.dirty_area_px = dirty_area_px;
+  if (!dirtyRects.empty()) {
+    const auto& first = dirtyRects.front();
+    std::ostringstream detail;
+    detail << "first_dirty=" << first.x << "," << first.y << " "
+           << first.width << "x" << first.height;
+    record.detail = detail.str();
+  }
+  OsrRenderLogWrite(record);
+
+  std::vector<BrowserViewRect> dip_rects;
+
   if (type == PET_VIEW) {
+    if (render_stats_) {
+      render_stats_->OnSetViewImageBegin();
+    }
     frame_->SetViewImage(buffer, width, height, scale);
+    if (render_stats_) {
+      render_stats_->OnSetViewImageDone();
+    }
     for (const auto& r : dirtyRects) {
       BrowserPhysicalRect phys{r.x, r.y, r.width, r.height};
       dip_rects.push_back(PhysicalRectToDipUpdateRect(phys, scale));
     }
   } else if (type == PET_POPUP) {
+    if (render_stats_) {
+      render_stats_->OnSetViewImageBegin();
+    }
     frame_->SetPopupImage(buffer, width, height, scale);
+    if (render_stats_) {
+      render_stats_->OnSetViewImageDone();
+    }
     dip_rects.push_back({});
   } else {
     return;
@@ -179,6 +210,10 @@ void OsrRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser,
 
   if (paint_update_callback_) {
     paint_update_callback_(dip_rects);
+  }
+
+  if (render_stats_) {
+    render_stats_->OnPaintEnd();
   }
 }
 

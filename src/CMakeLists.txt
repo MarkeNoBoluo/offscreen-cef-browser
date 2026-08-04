@@ -13,8 +13,6 @@ set(OFFSCREEN_WIDGET_SRCS
   browser/browser_frame.h
   browser/browser_client.cpp
   browser/browser_client.h
-  browser/browser_geometry.cpp
-  browser/browser_geometry.h
   browser/browser_ime_handler.cpp
   browser/browser_ime_handler.h
   browser/browser_service.cpp
@@ -105,9 +103,6 @@ target_link_options(offscreen_cef_subprocess PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:/MANIFEST:EMBED>
   $<$<CXX_COMPILER_ID:MSVC>:/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/windows_compatibility.manifest>
 )
-
-add_dependencies(offscreen_cef_browser libcef_dll_wrapper offscreen_cef_subprocess)
-add_dependencies(offscreen_cef_subprocess libcef_dll_wrapper)
 
 function(offscreen_cef_deploy target)
   if(NOT TARGET ${target})

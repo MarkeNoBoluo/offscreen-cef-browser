@@ -3,6 +3,8 @@
 #include <QPoint>
 #include <QWidget>
 
+#include "browser/render_stats.h"
+
 class QTabWidget;
 class QUrl;
 
@@ -84,6 +86,9 @@ class CefTabbedBrowser final : public QWidget {
   /// 当前网页请求右键菜单时发射。
   /// @param globalPos 菜单出现的全局坐标。
   void currentContextMenuRequested(const QPoint& globalPos);
+  /// 当前标签渲染性能快照更新时发射。
+  /// @param snapshot 当前网页的渲染统计快照。
+  void currentRenderStatsUpdated(const RenderStatsSnapshot& snapshot);
   /// 全部网页标签关闭时发射。
   void allTabsClosed();
 

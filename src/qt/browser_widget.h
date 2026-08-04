@@ -10,6 +10,7 @@
 
 #include "browser/browser_geometry.h"
 #include "browser/browser_paint_geometry.h"
+#include "browser/render_stats.h"
 #include "browser/tab_manager.h"
 #include "include/cef_drag_data.h"
 #include "include/cef_render_handler.h"
@@ -20,6 +21,7 @@ class QDragLeaveEvent;
 class QDragMoveEvent;
 class QDropEvent;
 class QMimeData;
+class QTimer;
 
 namespace offscreen {
 
@@ -52,6 +54,9 @@ class BrowserWidget final : public QWidget {
   /// 绑定供 paintEvent 读取的共享帧缓存。
   /// @param frame 浏览器服务提供的帧缓存。
   void SetFrame(std::shared_ptr<BrowserFrame> frame);
+  /// 绑定渲染性能统计核心；由 1s 定时器周期导出快照。
+  /// @param stats 浏览器服务提供的统计核心。
+  void SetRenderStats(std::shared_ptr<RenderStats> stats);
   /// 设置尺寸变化通知回调。
   /// @param resize_callback 接收逻辑矩形和缩放系数的回调。
   void SetResizeCallback(ResizeCallback resize_callback);
@@ -95,6 +100,9 @@ class BrowserWidget final : public QWidget {
   /// 用户请求右键菜单时发射。
   /// @param globalPos 菜单出现的全局坐标。
   void contextMenuRequested(const QPoint& globalPos);
+  /// 周期（每秒）发射渲染性能快照；空闲时不发射。
+  /// @param snapshot 渲染统计快照。
+  void renderStatsUpdated(const RenderStatsSnapshot& snapshot);
 
  protected:
   /// 将 Qt 尺寸和设备缩放变化通知浏览器服务。
@@ -152,6 +160,8 @@ class BrowserWidget final : public QWidget {
   void dropEvent(QDropEvent* event) override;
 
  private:
+  /// 周期导出渲染统计：写日志并发射 renderStatsUpdated。
+  void EmitRenderStats();
   /// 解析 WM_IME_COMPOSITION 并调用 BrowserService 的输入法接口。
   /// @param wParam Win32 消息 wParam。
   /// @param lParam Win32 消息 lParam。
@@ -175,6 +185,8 @@ class BrowserWidget final : public QWidget {
 
   ResizeCallback resize_callback_;
   std::shared_ptr<BrowserFrame> frame_;
+  std::shared_ptr<RenderStats> render_stats_;
+  QTimer* stats_timer_ = nullptr;
   BrowserService* browser_service_ = nullptr;
   BrowserImeHandler* ime_handler_ = nullptr;
   TabManager::TabId tab_id_ = TabManager::kInvalidTabId;

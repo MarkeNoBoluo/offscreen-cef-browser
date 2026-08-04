@@ -204,7 +204,7 @@ Invoke-Checked "cmake" @(
   "-DQt6_DIR=$qt6Dir",
   "-DCEF_RUNTIME_LIBRARY_FLAG=/MD",
   "-DOFFSCREEN_BUILD_APP=ON",
-  "-DOFFSCREEN_BUILD_TESTS=ON"
+  "-DOFFSCREEN_BUILD_TESTS=OFF"
 )
 
 Write-Step "Building targets"

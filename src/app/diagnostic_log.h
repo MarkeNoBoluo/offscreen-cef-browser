@@ -66,12 +66,26 @@ inline std::string HexValue(uintptr_t value) {
   return stream.str();
 }
 
+/// 返回墙钟时间戳 HH:MM:SS.mmm，供所有日志统一对时。
+/// @return 例如 "12:34:56.789"。
+inline std::string FormatTimestampHMSMM() {
+  SYSTEMTIME system_time;
+  ::GetLocalTime(&system_time);
+  std::ostringstream stream;
+  stream << std::setfill('0') << std::setw(2) << system_time.wHour << ':'
+         << std::setw(2) << system_time.wMinute << ':'
+         << std::setw(2) << system_time.wSecond << '.'
+         << std::setw(3) << system_time.wMilliseconds;
+  return stream.str();
+}
+
 /// 输出带进程和线程标识的诊断日志。
 /// @param message 要记录的 UTF-8 消息。
 inline void DiagnosticLog(const std::string& message) {
   std::ostringstream stream;
-  stream << "[offscreen pid=" << ::GetCurrentProcessId()
-         << " tid=" << ::GetCurrentThreadId() << "] " << message << '\n';
+  stream << "[" << FormatTimestampHMSMM() << "] [offscreen pid="
+         << ::GetCurrentProcessId() << " tid=" << ::GetCurrentThreadId()
+         << "] " << message << '\n';
 
   const std::string line = stream.str();
   std::lock_guard<std::mutex> lock(DiagnosticLogMutex());

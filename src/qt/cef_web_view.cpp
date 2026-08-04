@@ -42,6 +42,7 @@ CefWebView::CefWebView(QWidget* parent) : QWidget(parent) {
   browser_service_ = std::make_unique<BrowserService>();
   browser_widget_ = new BrowserWidget(this);
   browser_widget_->SetFrame(browser_service_->frame());
+  browser_widget_->SetRenderStats(browser_service_->render_stats());
   browser_widget_->SetBrowserService(browser_service_.get());
   layout->addWidget(browser_widget_);
 
@@ -113,6 +114,8 @@ CefWebView::CefWebView(QWidget* parent) : QWidget(parent) {
       });
   QObject::connect(browser_widget_, &BrowserWidget::contextMenuRequested, this,
                    &CefWebView::contextMenuRequested);
+  QObject::connect(browser_widget_, &BrowserWidget::renderStatsUpdated, this,
+                   &CefWebView::renderStatsUpdated);
 }
 
 CefWebView::~CefWebView() {
@@ -150,6 +153,17 @@ bool CefWebView::canGoForward() const {
 
 bool CefWebView::isLoading() const {
   return browser_service_ && browser_service_->is_loading();
+}
+
+void CefWebView::SetRenderStatsEnabled(bool enabled) {
+  if (browser_service_) {
+    browser_service_->SetRenderStatsEnabled(enabled);
+  }
+}
+
+RenderStatsSnapshot CefWebView::renderStatsSnapshot() const {
+  return browser_service_ ? browser_service_->render_stats()->Snapshot()
+                          : RenderStatsSnapshot{};
 }
 
 void CefWebView::LoadUrl(const QUrl& url) {

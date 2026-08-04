@@ -19,6 +19,7 @@
 namespace offscreen {
 
 class BrowserFrame;
+class RenderStats;
 
 // 单个 CEF 离屏浏览器的协调者：负责创建、关闭，以及在 Qt 与 CEF
 // 之间转发输入、页面状态和渲染通知。
@@ -154,6 +155,15 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 获取供 Qt 绘制使用的共享帧缓存。
   /// @return 浏览器帧缓存。
   std::shared_ptr<BrowserFrame> frame() const;
+  /// 获取渲染性能统计实例。
+  /// @return 渲染统计核心；与浏览器服务同生命周期。
+  std::shared_ptr<RenderStats> render_stats() const;
+  /// 开启或关闭渲染性能统计。
+  /// @param enabled 是否启用采集与窗口聚合。
+  void SetRenderStatsEnabled(bool enabled);
+  /// 查询渲染统计是否启用。
+  /// @return 已启用时为 true。
+  bool render_stats_enabled() const;
 
   // 键盘按下、文本输入、抬起必须分别转为 CEF 事件，避免中文输入法或
   // AltGr 等场景被当作普通按键而丢失字符。
@@ -339,6 +349,7 @@ class BrowserService final : public BrowserClient::Delegate {
   CefRefPtr<OsrRenderHandler> render_handler_;
   CefRefPtr<BrowserClient> client_;
   std::shared_ptr<BrowserFrame> frame_;
+  std::shared_ptr<RenderStats> render_stats_;
   PaintUpdateCallback paint_update_callback_;
   CursorChangeCallback cursor_change_callback_;
   ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;
