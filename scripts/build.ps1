@@ -5,7 +5,8 @@ param(
   [string]$BuildDir = "",
   [ValidateSet("Debug", "Release")]
   [string]$Configuration = "Release",
-  [string]$QtPrefix = ""
+  [string]$QtPrefix = "",
+  [string]$InstallPrefix = ""
 )
 
 Set-StrictMode -Version Latest
@@ -165,6 +166,14 @@ if (-not $BuildDir) {
   $BuildDir = "build\cef100-msvc2022-${outputArchitecture}"
 }
 $buildPath = Join-Path $repoRoot $BuildDir
+$installPath = ""
+if ($InstallPrefix) {
+  if ([System.IO.Path]::IsPathRooted($InstallPrefix)) {
+    $installPath = [System.IO.Path]::GetFullPath($InstallPrefix)
+  } else {
+    $installPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $InstallPrefix))
+  }
+}
 
 Write-Step "Validating prerequisites"
 Require-Path $CefRoot "CEF root"
@@ -181,6 +190,9 @@ Write-Host "Qt prefix: $resolvedQtPrefix"
 Write-Host "Qt6_DIR: $qt6Dir"
 Write-Host "Build dir: $buildPath"
 Write-Host "Configuration: $Configuration"
+if ($installPath) {
+  Write-Host "Install prefix: $installPath"
+}
 
 Write-Step "Configuring CMake"
 Invoke-Checked "cmake" @(
@@ -208,5 +220,14 @@ Invoke-Checked "ctest" @(
   "-C", $Configuration,
   "--output-on-failure"
 )
+
+if ($installPath) {
+  Write-Step "Installing runtime"
+  Invoke-Checked "cmake" @(
+    "--install", $buildPath,
+    "--config", $Configuration,
+    "--prefix", $installPath
+  )
+}
 
 Write-Step "Build and tests completed"

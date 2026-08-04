@@ -13,6 +13,7 @@ function(add_embedding_demo target source)
     $<$<CXX_COMPILER_ID:MSVC>:/MANIFESTINPUT:${CMAKE_SOURCE_DIR}/src/windows_compatibility.manifest>
   )
   offscreen_cef_deploy(${target})
+  install(TARGETS ${target} RUNTIME DESTINATION .)
 endfunction()
 
 add_embedding_demo(embedding_demo_webview webview/main.cpp)

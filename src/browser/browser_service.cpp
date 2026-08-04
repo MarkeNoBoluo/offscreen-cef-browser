@@ -42,6 +42,22 @@ bool IsWindowsCharMessage(uint32_t message) {
   return message == WM_CHAR || message == WM_SYSCHAR;
 }
 
+/// 将 Qt 坐标、按键和修饰键转换为 CEF 鼠标事件。
+/// @param x 逻辑 x 坐标。
+/// @param y 逻辑 y 坐标。
+/// @param qt_buttons 当前全部按下鼠标键。
+/// @param qt_modifiers Qt 修饰键位掩码。
+/// @return CEF 鼠标事件。
+CefMouseEvent MakeCefMouseEvent(int x, int y, int qt_buttons,
+                                int qt_modifiers) {
+  CefMouseEvent mouse_event;
+  mouse_event.x = x;
+  mouse_event.y = y;
+  mouse_event.modifiers = MapQtModifiersToCefEventFlags(qt_modifiers) |
+                          MouseButtonsToCefEventFlags(qt_buttons);
+  return mouse_event;
+}
+
 }  // namespace
 
 BrowserService::BrowserService()
@@ -68,6 +84,24 @@ void BrowserService::SetCursorChangeCallback(CursorChangeCallback callback) {
   cursor_change_callback_ = std::move(callback);
 }
 
+void BrowserService::SetStartDraggingCallback(
+    StartDraggingCallback callback) {
+  DiagnosticLog("BrowserService::SetStartDraggingCallback");
+  start_dragging_callback_ = std::move(callback);
+  if (render_handler_) {
+    render_handler_->SetStartDraggingCallback(start_dragging_callback_);
+  }
+}
+
+void BrowserService::SetUpdateDragCursorCallback(
+    UpdateDragCursorCallback callback) {
+  DiagnosticLog("BrowserService::SetUpdateDragCursorCallback");
+  update_drag_cursor_callback_ = std::move(callback);
+  if (render_handler_) {
+    render_handler_->SetUpdateDragCursorCallback(update_drag_cursor_callback_);
+  }
+}
+
 bool BrowserService::CreateBrowser(HWND parent_handle,
                                    BrowserViewRect initial_view_rect,
                                    double initial_device_scale_factor,
@@ -87,6 +121,12 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
   if (ime_composition_range_changed_callback_) {
     render_handler_->SetImeCompositionRangeChangedCallback(
         ime_composition_range_changed_callback_);
+  }
+  if (start_dragging_callback_) {
+    render_handler_->SetStartDraggingCallback(start_dragging_callback_);
+  }
+  if (update_drag_cursor_callback_) {
+    render_handler_->SetUpdateDragCursorCallback(update_drag_cursor_callback_);
   }
   client_ = new BrowserClient(this, render_handler_);
 
@@ -109,6 +149,8 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
 
   CefBrowserSettings browser_settings;
   browser_settings.windowless_frame_rate = 30;
+  browser_settings.javascript_access_clipboard = STATE_ENABLED;
+  browser_settings.javascript_dom_paste = STATE_ENABLED;
   const bool created = CefBrowserHost::CreateBrowser(
       window_info, client_, initial_url, browser_settings, nullptr, nullptr);
   DiagnosticLog(std::string("CefBrowserHost::CreateBrowser returned ") +
@@ -360,11 +402,8 @@ void BrowserService::SendMouseClickEvent(int x, int y,
                                          int qt_modifiers) {
   if (!browser_) return;
 
-  CefMouseEvent mouse_event;
-  mouse_event.x = x;
-  mouse_event.y = y;
-  mouse_event.modifiers = MapQtModifiersToCefEventFlags(qt_modifiers) |
-                          MouseButtonsToCefEventFlags(qt_buttons);
+  const CefMouseEvent mouse_event =
+      MakeCefMouseEvent(x, y, qt_buttons, qt_modifiers);
 
   browser_->GetHost()->SendMouseClickEvent(
       mouse_event,
@@ -379,11 +418,8 @@ void BrowserService::SendMouseMoveEvent(int x, int y,
                                          bool mouse_leave) {
   if (!browser_) return;
 
-  CefMouseEvent mouse_event;
-  mouse_event.x = x;
-  mouse_event.y = y;
-  mouse_event.modifiers = MapQtModifiersToCefEventFlags(qt_modifiers) |
-                          MouseButtonsToCefEventFlags(qt_buttons);
+  const CefMouseEvent mouse_event =
+      MakeCefMouseEvent(x, y, qt_buttons, qt_modifiers);
 
   browser_->GetHost()->SendMouseMoveEvent(mouse_event, mouse_leave);
 }
@@ -394,13 +430,81 @@ void BrowserService::SendMouseWheelEvent(int x, int y,
                                           int delta_x, int delta_y) {
   if (!browser_) return;
 
-  CefMouseEvent mouse_event;
-  mouse_event.x = x;
-  mouse_event.y = y;
-  mouse_event.modifiers = MapQtModifiersToCefEventFlags(qt_modifiers) |
-                          MouseButtonsToCefEventFlags(qt_buttons);
+  const CefMouseEvent mouse_event =
+      MakeCefMouseEvent(x, y, qt_buttons, qt_modifiers);
 
   browser_->GetHost()->SendMouseWheelEvent(mouse_event, delta_x, delta_y);
+}
+
+void BrowserService::SendDragTargetDragEnter(CefRefPtr<CefDragData> drag_data,
+                                             int x, int y, int qt_buttons,
+                                             int qt_modifiers,
+                                             CefBrowserHost::DragOperationsMask
+                                                 allowed_ops) {
+  std::ostringstream stream;
+  stream << "BrowserService::SendDragTargetDragEnter has_browser="
+         << (browser_ ? "true" : "false")
+         << " has_drag_data=" << (drag_data ? "true" : "false")
+         << " allowed_ops=" << allowed_ops << " pos=" << x << "," << y;
+  DiagnosticLog(stream.str());
+  if (!browser_ || !drag_data) return;
+
+  CefRefPtr<CefDragData> target_drag_data =
+      drag_data->IsReadOnly() ? drag_data->Clone() : drag_data;
+  if (!target_drag_data) return;
+  target_drag_data->ResetFileContents();
+  const CefMouseEvent mouse_event =
+      MakeCefMouseEvent(x, y, qt_buttons, qt_modifiers);
+  browser_->GetHost()->DragTargetDragEnter(target_drag_data, mouse_event,
+                                           allowed_ops);
+}
+
+void BrowserService::SendDragTargetDragOver(int x, int y, int qt_buttons,
+                                            int qt_modifiers,
+                                            CefBrowserHost::DragOperationsMask
+                                                allowed_ops) {
+  if (!browser_) return;
+
+  const CefMouseEvent mouse_event =
+      MakeCefMouseEvent(x, y, qt_buttons, qt_modifiers);
+  browser_->GetHost()->DragTargetDragOver(mouse_event, allowed_ops);
+}
+
+void BrowserService::SendDragTargetDragLeave() {
+  DiagnosticLog("BrowserService::SendDragTargetDragLeave has_browser=" +
+                std::string(browser_ ? "true" : "false"));
+  if (!browser_) return;
+  browser_->GetHost()->DragTargetDragLeave();
+}
+
+void BrowserService::SendDragTargetDrop(int x, int y, int qt_buttons,
+                                        int qt_modifiers) {
+  DiagnosticLog("BrowserService::SendDragTargetDrop has_browser=" +
+                std::string(browser_ ? "true" : "false"));
+  if (!browser_) return;
+
+  const CefMouseEvent mouse_event =
+      MakeCefMouseEvent(x, y, qt_buttons, qt_modifiers);
+  browser_->GetHost()->DragTargetDrop(mouse_event);
+}
+
+void BrowserService::SendDragSourceEndedAt(
+    int x,
+    int y,
+    CefBrowserHost::DragOperationsMask op) {
+  DiagnosticLog("BrowserService::SendDragSourceEndedAt has_browser=" +
+                std::string(browser_ ? "true" : "false") +
+                " op=" + std::to_string(op) + " pos=" + std::to_string(x) +
+                "," + std::to_string(y));
+  if (!browser_) return;
+  browser_->GetHost()->DragSourceEndedAt(x, y, op);
+}
+
+void BrowserService::SendDragSourceSystemDragEnded() {
+  DiagnosticLog("BrowserService::SendDragSourceSystemDragEnded has_browser=" +
+                std::string(browser_ ? "true" : "false"));
+  if (!browser_) return;
+  browser_->GetHost()->DragSourceSystemDragEnded();
 }
 
 void BrowserService::SetBrowserFocus(bool focus) {

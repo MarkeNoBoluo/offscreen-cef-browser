@@ -20,6 +20,16 @@ using ImeCompositionRangeChangedCallback =
 // 需要重绘的 DIP 脏区域；mutex 保护 CEF 回调与 Qt 尺寸更新之间的共享状态。
 class OsrRenderHandler final : public CefRenderHandler {
  public:
+  using StartDraggingCallback =
+      std::function<bool(CefRefPtr<CefBrowser>,
+                         CefRefPtr<CefDragData>,
+                         CefRenderHandler::DragOperationsMask,
+                         int,
+                         int)>;
+  using UpdateDragCursorCallback =
+      std::function<void(CefRefPtr<CefBrowser>,
+                         CefRenderHandler::DragOperation)>;
+
   /// 创建离屏渲染处理器。
   /// @param view_rect 初始逻辑视图矩形。
   /// @param device_scale_factor 初始设备缩放系数。
@@ -41,6 +51,8 @@ class OsrRenderHandler final : public CefRenderHandler {
   /// @param callback 接收 CEF 选择范围和字符矩形的回调。
   void SetImeCompositionRangeChangedCallback(
       ImeCompositionRangeChangedCallback callback);
+  void SetStartDraggingCallback(StartDraggingCallback callback);
+  void SetUpdateDragCursorCallback(UpdateDragCursorCallback callback);
 
   /// 向 CEF 提供逻辑视图矩形。
   /// @param browser 发起查询的浏览器。
@@ -73,6 +85,13 @@ class OsrRenderHandler final : public CefRenderHandler {
                const void* buffer,
                int width,
                int height) override;
+  bool StartDragging(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefDragData> drag_data,
+                     DragOperationsMask allowed_ops,
+                     int x,
+                     int y) override;
+  void UpdateDragCursor(CefRefPtr<CefBrowser> browser,
+                        DragOperation operation) override;
   /// 转发 CEF 的组合文本选择范围与字符位置。
   /// @param browser 产生输入法状态的浏览器。
   /// @param selected_range 当前选择范围。
@@ -89,6 +108,8 @@ class OsrRenderHandler final : public CefRenderHandler {
   std::shared_ptr<BrowserFrame> frame_;
   PaintUpdateCallback paint_update_callback_;
   ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;
+  StartDraggingCallback start_dragging_callback_;
+  UpdateDragCursorCallback update_drag_cursor_callback_;
 
   IMPLEMENT_REFCOUNTING(OsrRenderHandler);
 };

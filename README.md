@@ -40,6 +40,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\build.ps1" `
 | `-QtPrefix` | 自动从 PATH 查找 `qmake` | 必须指向 Qt 6.9.3 `msvc2022_64` |
 | `-BuildDir` | `build\cef100-msvc2022-x64` | CMake 构建目录 |
 | `-Configuration` | `Release` | `Debug` 或 `Release` |
+| `-InstallPrefix` | 空 | 可选；传入后在测试通过后执行 `cmake --install` 生成运行目录 |
 
 Release 产物位于 `bin\msvc-2022-x64\Release`。已验证生成以下目标：
 
@@ -47,6 +48,27 @@ Release 产物位于 `bin\msvc-2022-x64\Release`。已验证生成以下目标�
 - `offscreen_cef_subprocess.exe`
 - `embedding_demo_webview.exe`
 - `embedding_demo_tabbed_browser.exe`
+
+## 三种应用场景
+
+当前版本按三个场景交付：
+
+| 场景 | 可执行文件或入口 | 用途 |
+| --- | --- | --- |
+| 最小浏览器外壳 | `offscreen_cef_browser.exe` / `src/app/main.cpp` | 独立运行的 Qt 浏览器壳，可继续改造地址栏、Tab 和业务工具栏。 |
+| WebView Browser 快速嵌入 | `embedding_demo_webview.exe` / `offscreen::CefWebView` | 单页面、全屏页、指令驱动页面嵌入宿主 Qt 程序。 |
+| Tabbed Browser 快速嵌入 | `embedding_demo_tabbed_browser.exe` / `offscreen::CefTabbedBrowser` | 多网页、多标签页嵌入宿主 Qt 程序。 |
+
+最小浏览器外壳可直接传入首个页面地址：
+
+```powershell
+& ".\bin\msvc-2022-x64\Release\offscreen_cef_browser.exe" `
+  --url=https://example.com/
+```
+
+嵌入宿主程序时链接 `offscreen_cef::widgets`，并调用 `offscreen_cef_deploy(host_app)`
+部署 CEF runtime、resources 和 `offscreen_cef_subprocess.exe`。完整步骤见
+[docs/scenarios.md](docs/scenarios.md) 和 [docs/embedding.md](docs/embedding.md)。
 
 ## 本地 HTML WebView 验证
 
@@ -61,6 +83,32 @@ $env:QT_PLUGIN_PATH = "D:\IDE\QT6.9.3\6.9.3\msvc2022_64\plugins"
 ```
 
 该入口已完成人工 Web 操作验证。
+
+## 可视化系统兼容性测试页
+
+`tests\visualization_compatibility_test.html` 用于检查目标可视化设计系统常用的浏览器能力，包括 Canvas、LocalStorage、Fetch、WebGL、IndexedDB、Web Worker、Video codec 探测，以及 Clipboard、Drag & Drop、File API、PointerEvent、WebSocket 等需要人工或服务端配合的能力。
+
+```powershell
+& ".\bin\msvc-2022-x64\Release\embedding_demo_webview.exe" `
+  ".\tests\visualization_compatibility_test.html"
+```
+
+Cookie、登录态、业务 API、WebSocket 和真实视频播放仍需使用目标服务地址现场验收。
+
+## 安装运行目录
+
+传入 `-InstallPrefix` 时，构建脚本会在编译和 CTest 通过后执行安装：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\build.ps1" `
+  -CefRoot "D:\Git\cef_binary_100.0.14+g4e5ba66+chromium-100.0.4896.75_windows64_minimal" `
+  -QtPrefix "D:\IDE\QT6.9.3\6.9.3\msvc2022_64" `
+  -BuildDir "build\cef100-msvc2022-x64" `
+  -Configuration Release `
+  -InstallPrefix "dist\cef100-release"
+```
+
+安装目录包含主程序、CEF 子进程、CEF runtime/resources、Qt runtime/plugins、两个 embedding demo、HTML 测试页和核心文档。Qt runtime/plugins 通过当前 Qt 6.9.3 包内的 `windeployqt` 部署；MSVC 运行库不复制到安装目录，目标机器需要安装匹配的 Visual C++ Runtime。
 
 ## 架构
 
@@ -139,6 +187,7 @@ offscreen-cef-browser/
 - [docs/architecture.md](docs/architecture.md) — 架构、线程模型、渲染与输入链路
 - [docs/implementation-plan.md](docs/implementation-plan.md) — 分阶段开发计划与验收标准
 - [docs/visualization-system-compatibility.md](docs/visualization-system-compatibility.md) — 可视化设计系统兼容性要求
+- [docs/scenarios.md](docs/scenarios.md) — 最小浏览器外壳、WebView Browser、Tabbed Browser 三种场景应用
 - [docs/embedding.md](docs/embedding.md) — 将 Runtime、单页 WebView 或多 Tab 组件嵌入宿主 Qt 程序
 
 ## 技术栈

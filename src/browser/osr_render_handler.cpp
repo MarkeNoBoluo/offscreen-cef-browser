@@ -53,6 +53,18 @@ void OsrRenderHandler::SetImeCompositionRangeChangedCallback(
   ime_composition_range_changed_callback_ = std::move(callback);
 }
 
+void OsrRenderHandler::SetStartDraggingCallback(
+    StartDraggingCallback callback) {
+  DiagnosticLog("OsrRenderHandler::SetStartDraggingCallback");
+  start_dragging_callback_ = std::move(callback);
+}
+
+void OsrRenderHandler::SetUpdateDragCursorCallback(
+    UpdateDragCursorCallback callback) {
+  DiagnosticLog("OsrRenderHandler::SetUpdateDragCursorCallback");
+  update_drag_cursor_callback_ = std::move(callback);
+}
+
 void OsrRenderHandler::GetViewRect(CefRefPtr<CefBrowser> browser,
                                     CefRect& rect) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -167,6 +179,38 @@ void OsrRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser,
 
   if (paint_update_callback_) {
     paint_update_callback_(dip_rects);
+  }
+}
+
+bool OsrRenderHandler::StartDragging(CefRefPtr<CefBrowser> browser,
+                                     CefRefPtr<CefDragData> drag_data,
+                                     DragOperationsMask allowed_ops,
+                                     int x,
+                                     int y) {
+  std::ostringstream stream;
+  stream << "OsrRenderHandler::StartDragging browser_id="
+         << (browser ? browser->GetIdentifier() : -1)
+         << " has_drag_data=" << (drag_data ? "true" : "false")
+         << " allowed_ops=" << allowed_ops << " screen=" << x << "," << y
+         << " has_callback="
+         << (start_dragging_callback_ ? "true" : "false");
+  DiagnosticLog(stream.str());
+
+  if (!start_dragging_callback_) {
+    return false;
+  }
+  return start_dragging_callback_(browser, drag_data, allowed_ops, x, y);
+}
+
+void OsrRenderHandler::UpdateDragCursor(CefRefPtr<CefBrowser> browser,
+                                        DragOperation operation) {
+  DiagnosticLog("OsrRenderHandler::UpdateDragCursor browser_id=" +
+                std::to_string(browser ? browser->GetIdentifier() : -1) +
+                " operation=" + std::to_string(operation) +
+                " has_callback=" +
+                (update_drag_cursor_callback_ ? "true" : "false"));
+  if (update_drag_cursor_callback_) {
+    update_drag_cursor_callback_(browser, operation);
   }
 }
 

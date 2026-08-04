@@ -11,16 +11,27 @@
 #include "browser/browser_ime_handler.h"
 #include "browser/browser_input_mapping.h"
 #include "browser/browser_service.h"
+#include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QFileInfo>
 #include <QFocusEvent>
 #include <QKeyEvent>
+#include <QMimeData>
 #include <QMetaObject>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPointer>
 #include <QRegion>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QThread>
+#include <QUrl>
 #include <QWindow>
 #include <QWheelEvent>
 
@@ -59,6 +70,16 @@ constexpr int kCursorZoomIn = 39;            // CT_ZOOMIN
 constexpr int kCursorZoomOut = 40;           // CT_ZOOMOUT
 constexpr int kCursorGrab = 41;              // CT_GRAB
 constexpr int kCursorGrabbing = 42;          // CT_GRABBING
+
+CefRenderHandler::DragOperation PreferredDragOperation(
+    CefRenderHandler::DragOperationsMask allowed_ops) {
+  if (allowed_ops & DRAG_OPERATION_COPY) return DRAG_OPERATION_COPY;
+  if (allowed_ops & DRAG_OPERATION_MOVE) return DRAG_OPERATION_MOVE;
+  if (allowed_ops & DRAG_OPERATION_LINK) return DRAG_OPERATION_LINK;
+  if (allowed_ops & DRAG_OPERATION_GENERIC) return DRAG_OPERATION_GENERIC;
+  if (allowed_ops & DRAG_OPERATION_PRIVATE) return DRAG_OPERATION_PRIVATE;
+  return DRAG_OPERATION_NONE;
+}
 
 }  // namespace
 
@@ -128,6 +149,7 @@ BrowserWidget::BrowserWidget(QWidget* parent) : QWidget(parent) {
   setAttribute(Qt::WA_NativeWindow, true);
   setAttribute(Qt::WA_DontCreateNativeAncestors, false);
   setAttribute(Qt::WA_InputMethodEnabled, true);
+  setAcceptDrops(true);
   setFocusPolicy(Qt::StrongFocus);
   setMouseTracking(true);
   setAutoFillBackground(false);
@@ -169,9 +191,64 @@ void BrowserWidget::SetResizeCallback(ResizeCallback resize_callback) {
 }
 
 void BrowserWidget::SetBrowserService(BrowserService* service) {
+  if (browser_service_ && browser_service_ != service) {
+    CancelCefDragging();
+    browser_service_->SetStartDraggingCallback({});
+    browser_service_->SetUpdateDragCursorCallback({});
+  }
+
   browser_service_ = service;
   DiagnosticLog("BrowserWidget::SetBrowserService service=" +
                 HexValue(reinterpret_cast<uintptr_t>(service)));
+
+  if (!browser_service_) {
+    return;
+  }
+
+  QPointer<BrowserWidget> widget_guard(this);
+  browser_service_->SetStartDraggingCallback(
+      [widget_guard](CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefDragData> drag_data,
+                     CefRenderHandler::DragOperationsMask allowed_ops,
+                     int screen_x, int screen_y) {
+        if (!widget_guard) return false;
+
+        bool handled = false;
+        auto start_drag = [&handled, widget_guard, browser, drag_data,
+                           allowed_ops, screen_x, screen_y]() {
+          if (widget_guard) {
+            handled = widget_guard->StartCefDragging(
+                browser, drag_data, allowed_ops, screen_x, screen_y);
+          }
+        };
+
+        if (QThread::currentThread() == widget_guard->thread()) {
+          start_drag();
+        } else if (widget_guard) {
+          QMetaObject::invokeMethod(widget_guard.data(), start_drag,
+                                    Qt::BlockingQueuedConnection);
+        }
+        return handled;
+      });
+
+  browser_service_->SetUpdateDragCursorCallback(
+      [widget_guard](CefRefPtr<CefBrowser>,
+                     CefRenderHandler::DragOperation operation) {
+        if (!widget_guard) return;
+
+        auto update_cursor = [widget_guard, operation]() {
+          if (widget_guard) {
+            widget_guard->UpdateCefDragCursor(operation);
+          }
+        };
+
+        if (QThread::currentThread() == widget_guard->thread()) {
+          update_cursor();
+        } else if (widget_guard) {
+          QMetaObject::invokeMethod(widget_guard.data(), update_cursor,
+                                    Qt::QueuedConnection);
+        }
+      });
 }
 
 void BrowserWidget::SetImeHandler(BrowserImeHandler* handler) {
@@ -184,6 +261,164 @@ void BrowserWidget::SetImeHandler(BrowserImeHandler* handler) {
     // ancestor window.
     ime_handler_->SetWindowHandle(reinterpret_cast<HWND>(winId()));
   }
+}
+
+CefRefPtr<CefDragData> BrowserWidget::CreateCefDragData(
+    const QMimeData* mime_data) const {
+  if (!mime_data) return nullptr;
+
+  CefRefPtr<CefDragData> drag_data = CefDragData::Create();
+  bool has_supported_data = false;
+
+  if (mime_data->hasUrls()) {
+    for (const QUrl& url : mime_data->urls()) {
+      if (url.isLocalFile()) {
+        const QString local_file = QDir::toNativeSeparators(url.toLocalFile());
+        const QString display_name = QFileInfo(local_file).fileName();
+        drag_data->AddFile(local_file.toStdWString(),
+                           display_name.toStdWString());
+        has_supported_data = true;
+      } else if (!has_supported_data) {
+        drag_data->SetLinkURL(url.toString().toStdWString());
+        drag_data->SetLinkTitle(url.toString().toStdWString());
+        has_supported_data = true;
+      }
+    }
+  }
+
+  if (mime_data->hasHtml()) {
+    drag_data->SetFragmentHtml(mime_data->html().toStdWString());
+    has_supported_data = true;
+  }
+
+  if (mime_data->hasText()) {
+    drag_data->SetFragmentText(mime_data->text().toStdWString());
+    has_supported_data = true;
+  }
+
+  return has_supported_data ? drag_data : nullptr;
+}
+
+bool BrowserWidget::StartCefDragging(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefDragData> drag_data,
+    CefRenderHandler::DragOperationsMask allowed_ops,
+    int screen_x,
+    int screen_y) {
+  (void)browser;
+  if (!browser_service_ || !drag_data ||
+      allowed_ops == DRAG_OPERATION_NONE) {
+    DiagnosticLog("BrowserWidget::StartCefDragging rejected has_service=" +
+                  std::string(browser_service_ ? "true" : "false") +
+                  " has_drag_data=" + (drag_data ? "true" : "false") +
+                  " allowed_ops=" + std::to_string(allowed_ops));
+    return false;
+  }
+
+  CancelCefDragging();
+
+  cef_drag_data_ = drag_data->Clone();
+  if (!cef_drag_data_) {
+    cef_drag_data_ = drag_data;
+  }
+  cef_drag_allowed_ops_ = allowed_ops;
+  cef_drag_current_op_ = PreferredDragOperation(allowed_ops);
+  cef_drag_source_active_ = true;
+
+  QPoint position = mapFromGlobal(QPoint(screen_x, screen_y));
+  if (!rect().contains(position) && rect().contains(last_mouse_pos_)) {
+    position = last_mouse_pos_;
+  }
+
+  DiagnosticLog("BrowserWidget::StartCefDragging screen=" +
+                std::to_string(screen_x) + "," + std::to_string(screen_y) +
+                " view=" + std::to_string(position.x()) + "," +
+                std::to_string(position.y()) +
+                " allowed_ops=" + std::to_string(allowed_ops));
+  SendCefDragEnter(position, static_cast<int>(QApplication::mouseButtons()),
+                   static_cast<int>(QApplication::keyboardModifiers()));
+  return true;
+}
+
+void BrowserWidget::UpdateCefDragCursor(
+    CefRenderHandler::DragOperation operation) {
+  cef_drag_current_op_ = operation;
+  if (operation == DRAG_OPERATION_NONE) {
+    setCursor(Qt::ForbiddenCursor);
+  } else if (operation & DRAG_OPERATION_COPY) {
+    setCursor(Qt::DragCopyCursor);
+  } else if (operation & DRAG_OPERATION_LINK) {
+    setCursor(Qt::PointingHandCursor);
+  } else if (operation & DRAG_OPERATION_MOVE) {
+    setCursor(Qt::ClosedHandCursor);
+  } else {
+    setCursor(Qt::ClosedHandCursor);
+  }
+}
+
+void BrowserWidget::SendCefDragEnter(const QPoint& position,
+                                     int buttons,
+                                     int modifiers) {
+  if (!browser_service_ || !cef_drag_data_) return;
+  browser_service_->SendDragTargetDragEnter(
+      cef_drag_data_, position.x(), position.y(), buttons, modifiers,
+      cef_drag_allowed_ops_);
+  cef_drag_target_active_ = true;
+}
+
+void BrowserWidget::FinishCefDragging(const QPoint& position,
+                                      int buttons,
+                                      int modifiers,
+                                      bool dropped) {
+  if (!cef_drag_source_active_) return;
+
+  const bool can_drop = dropped && rect().contains(position) &&
+                        cef_drag_current_op_ != DRAG_OPERATION_NONE;
+  CefRenderHandler::DragOperation operation =
+      can_drop ? cef_drag_current_op_ : DRAG_OPERATION_NONE;
+
+  if (browser_service_) {
+    if (cef_drag_target_active_) {
+      if (can_drop) {
+        browser_service_->SendDragTargetDrop(position.x(), position.y(),
+                                            buttons, modifiers);
+      } else {
+        browser_service_->SendDragTargetDragLeave();
+      }
+    }
+    browser_service_->SendDragSourceEndedAt(position.x(), position.y(),
+                                           operation);
+    browser_service_->SendDragSourceSystemDragEnded();
+  }
+
+  DiagnosticLog("BrowserWidget::FinishCefDragging dropped=" +
+                std::string(can_drop ? "true" : "false") +
+                " op=" + std::to_string(operation) +
+                " pos=" + std::to_string(position.x()) + "," +
+                std::to_string(position.y()));
+
+  cef_drag_source_active_ = false;
+  cef_drag_target_active_ = false;
+  cef_drag_data_ = nullptr;
+  cef_drag_allowed_ops_ = DRAG_OPERATION_NONE;
+  cef_drag_current_op_ = DRAG_OPERATION_NONE;
+  setCursor(Qt::ArrowCursor);
+}
+
+void BrowserWidget::CancelCefDragging() {
+  if (!cef_drag_source_active_) return;
+  if (browser_service_) {
+    if (cef_drag_target_active_) {
+      browser_service_->SendDragTargetDragLeave();
+    }
+    browser_service_->SendDragSourceSystemDragEnded();
+  }
+  cef_drag_source_active_ = false;
+  cef_drag_target_active_ = false;
+  cef_drag_data_ = nullptr;
+  cef_drag_allowed_ops_ = DRAG_OPERATION_NONE;
+  cef_drag_current_op_ = DRAG_OPERATION_NONE;
+  setCursor(Qt::ArrowCursor);
 }
 
 void BrowserWidget::OnImeCompositionRangeChanged(
@@ -475,6 +710,7 @@ void BrowserWidget::paintEvent(QPaintEvent* event) {
 }
 
 void BrowserWidget::mousePressEvent(QMouseEvent* event) {
+  last_mouse_pos_ = event->pos();
   if (browser_service_) {
     browser_service_->SendMouseClickEvent(
         event->pos().x(), event->pos().y(),
@@ -485,6 +721,14 @@ void BrowserWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void BrowserWidget::mouseReleaseEvent(QMouseEvent* event) {
+  last_mouse_pos_ = event->pos();
+  if (cef_drag_source_active_) {
+    FinishCefDragging(event->pos(), static_cast<int>(event->buttons()),
+                      static_cast<int>(event->modifiers()), true);
+    event->accept();
+    return;
+  }
+
   if (browser_service_) {
     browser_service_->SendMouseClickEvent(
         event->pos().x(), event->pos().y(),
@@ -496,6 +740,25 @@ void BrowserWidget::mouseReleaseEvent(QMouseEvent* event) {
 
 void BrowserWidget::mouseMoveEvent(QMouseEvent* event) {
   last_mouse_pos_ = event->pos();
+  if (cef_drag_source_active_) {
+    if (rect().contains(event->pos())) {
+      if (!cef_drag_target_active_) {
+        SendCefDragEnter(event->pos(), static_cast<int>(event->buttons()),
+                         static_cast<int>(event->modifiers()));
+      } else if (browser_service_) {
+        browser_service_->SendDragTargetDragOver(
+            event->pos().x(), event->pos().y(),
+            static_cast<int>(event->buttons()),
+            static_cast<int>(event->modifiers()), cef_drag_allowed_ops_);
+      }
+    } else if (browser_service_ && cef_drag_target_active_) {
+      browser_service_->SendDragTargetDragLeave();
+      cef_drag_target_active_ = false;
+    }
+    event->accept();
+    return;
+  }
+
   if (browser_service_) {
     browser_service_->SendMouseMoveEvent(
         event->pos().x(), event->pos().y(),
@@ -539,6 +802,14 @@ void BrowserWidget::wheelEvent(QWheelEvent* event) {
 
 void BrowserWidget::leaveEvent(QEvent* event) {
   QWidget::leaveEvent(event);
+  if (cef_drag_source_active_) {
+    if (browser_service_ && cef_drag_target_active_) {
+      browser_service_->SendDragTargetDragLeave();
+      cef_drag_target_active_ = false;
+    }
+    return;
+  }
+
   if (browser_service_) {
     browser_service_->SendMouseMoveEvent(
         last_mouse_pos_.x(), last_mouse_pos_.y(),
@@ -629,6 +900,7 @@ void BrowserWidget::focusOutEvent(QFocusEvent* event) {
   QWidget::focusOutEvent(event);
   DiagnosticLog("BrowserWidget::focusOutEvent composing=" +
                 std::string(is_composing_ ? "true" : "false"));
+  CancelCefDragging();
   if (browser_service_) {
     browser_service_->SetBrowserFocus(false);
   }
@@ -640,6 +912,81 @@ void BrowserWidget::focusOutEvent(QFocusEvent* event) {
       browser_service_->ImeCancelComposition();
     }
   }
+}
+
+void BrowserWidget::dragEnterEvent(QDragEnterEvent* event) {
+  if (!browser_service_) {
+    event->ignore();
+    return;
+  }
+
+  CefRefPtr<CefDragData> drag_data = CreateCefDragData(event->mimeData());
+  if (!drag_data) {
+    DiagnosticLog("BrowserWidget::dragEnterEvent ignored unsupported mime data");
+    event->ignore();
+    return;
+  }
+
+  const QPoint position = event->position().toPoint();
+  DiagnosticLog("BrowserWidget::dragEnterEvent x=" +
+                std::to_string(position.x()) + " y=" +
+                std::to_string(position.y()));
+  browser_service_->SendDragTargetDragEnter(
+      drag_data, position.x(), position.y(),
+      static_cast<int>(event->mouseButtons()),
+      static_cast<int>(event->keyboardModifiers()));
+  drag_active_ = true;
+  event->acceptProposedAction();
+}
+
+void BrowserWidget::dragMoveEvent(QDragMoveEvent* event) {
+  if (!browser_service_ || !drag_active_) {
+    event->ignore();
+    return;
+  }
+
+  const QPoint position = event->position().toPoint();
+  browser_service_->SendDragTargetDragOver(
+      position.x(), position.y(), static_cast<int>(event->mouseButtons()),
+      static_cast<int>(event->keyboardModifiers()));
+  event->acceptProposedAction();
+}
+
+void BrowserWidget::dragLeaveEvent(QDragLeaveEvent* event) {
+  if (browser_service_ && drag_active_) {
+    browser_service_->SendDragTargetDragLeave();
+  }
+  drag_active_ = false;
+  event->accept();
+}
+
+void BrowserWidget::dropEvent(QDropEvent* event) {
+  if (!browser_service_) {
+    event->ignore();
+    return;
+  }
+
+  const QPoint position = event->position().toPoint();
+  if (!drag_active_) {
+    CefRefPtr<CefDragData> drag_data = CreateCefDragData(event->mimeData());
+    if (!drag_data) {
+      event->ignore();
+      return;
+    }
+    browser_service_->SendDragTargetDragEnter(
+        drag_data, position.x(), position.y(),
+        static_cast<int>(event->mouseButtons()),
+        static_cast<int>(event->keyboardModifiers()));
+  }
+
+  DiagnosticLog("BrowserWidget::dropEvent x=" +
+                std::to_string(position.x()) + " y=" +
+                std::to_string(position.y()));
+  browser_service_->SendDragTargetDrop(
+      position.x(), position.y(), static_cast<int>(event->mouseButtons()),
+      static_cast<int>(event->keyboardModifiers()));
+  drag_active_ = false;
+  event->acceptProposedAction();
 }
 
 }  // namespace offscreen

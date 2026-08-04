@@ -177,6 +177,15 @@ if(OFFSCREEN_BUILD_APP)
   if(NOT QT6_CMAKE_DIR MATCHES "(^|/)${OFFSCREEN_QT_PACKAGE}(/|$)")
     message(FATAL_ERROR "This build requires the Qt 6.9.3 ${OFFSCREEN_QT_PACKAGE} package")
   endif()
+  get_filename_component(OFFSCREEN_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+  find_program(OFFSCREEN_WINDEPLOYQT_EXECUTABLE
+    NAMES windeployqt.exe windeployqt
+    HINTS "${OFFSCREEN_QT_PREFIX}/bin"
+    NO_DEFAULT_PATH
+  )
+  if(NOT OFFSCREEN_WINDEPLOYQT_EXECUTABLE)
+    message(WARNING "windeployqt was not found under ${OFFSCREEN_QT_PREFIX}/bin; install output will not include Qt runtime files")
+  endif()
 
   add_subdirectory("${CEF_LIBCEF_DLL_WRAPPER_PATH}" "${CMAKE_BINARY_DIR}/libcef_dll_wrapper")
   if(MSVC)

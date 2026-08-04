@@ -128,5 +128,33 @@ endfunction()
 offscreen_cef_deploy(offscreen_cef_browser)
 
 install(TARGETS offscreen_cef_browser offscreen_cef_subprocess RUNTIME DESTINATION .)
-install(DIRECTORY "${CEF_BINARY_DIR}/" DESTINATION . FILES_MATCHING PATTERN "*.dll" PATTERN "*.bin" PATTERN "*.json")
+install(DIRECTORY "${CEF_BINARY_DIR}/" DESTINATION . FILES_MATCHING PATTERN "*.dll" PATTERN "*.bin" PATTERN "*.dat" PATTERN "*.json")
 install(DIRECTORY "${CEF_RESOURCE_DIR}/" DESTINATION .)
+install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../tests/" DESTINATION tests FILES_MATCHING PATTERN "*.html")
+install(FILES "${CMAKE_CURRENT_LIST_DIR}/../README.md" DESTINATION .)
+install(FILES
+  "${CMAKE_CURRENT_LIST_DIR}/../docs/README.md"
+  "${CMAKE_CURRENT_LIST_DIR}/../docs/embedding.md"
+  "${CMAKE_CURRENT_LIST_DIR}/../docs/scenarios.md"
+  "${CMAKE_CURRENT_LIST_DIR}/../docs/visualization-system-compatibility.md"
+  DESTINATION docs
+)
+
+if(OFFSCREEN_WINDEPLOYQT_EXECUTABLE)
+  install(CODE "
+set(_offscreen_runtime_dir \"\${CMAKE_INSTALL_PREFIX}\")
+set(_offscreen_app \"\${_offscreen_runtime_dir}/offscreen_cef_browser.exe\")
+set(_offscreen_deploy_config --release)
+if(\"\${CMAKE_INSTALL_CONFIG_NAME}\" STREQUAL \"Debug\")
+  set(_offscreen_deploy_config --debug)
+endif()
+message(STATUS \"Deploying Qt runtime with ${OFFSCREEN_WINDEPLOYQT_EXECUTABLE}\")
+execute_process(
+  COMMAND \"${OFFSCREEN_WINDEPLOYQT_EXECUTABLE}\" \${_offscreen_deploy_config} --no-compiler-runtime --dir \"\${_offscreen_runtime_dir}\" \"\${_offscreen_app}\"
+  RESULT_VARIABLE _offscreen_windeployqt_result
+)
+if(NOT _offscreen_windeployqt_result EQUAL 0)
+  message(FATAL_ERROR \"windeployqt failed with exit code \${_offscreen_windeployqt_result}\")
+endif()
+")
+endif()

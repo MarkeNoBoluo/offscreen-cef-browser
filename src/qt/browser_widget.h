@@ -10,7 +10,14 @@
 #include "browser/browser_geometry.h"
 #include "browser/browser_paint_geometry.h"
 #include "browser/tab_manager.h"
+#include "include/cef_drag_data.h"
 #include "include/cef_render_handler.h"
+
+class QDragEnterEvent;
+class QDragLeaveEvent;
+class QDragMoveEvent;
+class QDropEvent;
+class QMimeData;
 
 namespace offscreen {
 
@@ -117,12 +124,40 @@ class BrowserWidget final : public QWidget {
   /// 取消预编辑并将失焦状态同步到 CEF。
   /// @param event Qt 焦点事件。
   void focusOutEvent(QFocusEvent* event) override;
+  /// 将 Qt 拖拽进入事件转换为 CEF OSR 拖拽进入。
+  /// @param event Qt 拖拽进入事件。
+  void dragEnterEvent(QDragEnterEvent* event) override;
+  /// 将 Qt 拖拽移动事件转换为 CEF OSR 拖拽移动。
+  /// @param event Qt 拖拽移动事件。
+  void dragMoveEvent(QDragMoveEvent* event) override;
+  /// 通知 CEF 拖拽已离开视图。
+  /// @param event Qt 拖拽离开事件。
+  void dragLeaveEvent(QDragLeaveEvent* event) override;
+  /// 将 Qt 投放事件转换为 CEF OSR drop。
+  /// @param event Qt 投放事件。
+  void dropEvent(QDropEvent* event) override;
 
  private:
   /// 解析 WM_IME_COMPOSITION 并调用 BrowserService 的输入法接口。
   /// @param wParam Win32 消息 wParam。
   /// @param lParam Win32 消息 lParam。
   void HandleImeCompositionMessage(WPARAM wParam, LPARAM lParam);
+  /// 从 Qt MIME 数据构造 CEF 拖拽数据。
+  /// @param mime_data Qt 拖拽数据。
+  /// @return 可传给 CEF 的拖拽数据；不支持时为 nullptr。
+  CefRefPtr<CefDragData> CreateCefDragData(const QMimeData* mime_data) const;
+  bool StartCefDragging(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefDragData> drag_data,
+                        CefRenderHandler::DragOperationsMask allowed_ops,
+                        int screen_x,
+                        int screen_y);
+  void UpdateCefDragCursor(CefRenderHandler::DragOperation operation);
+  void SendCefDragEnter(const QPoint& position, int buttons, int modifiers);
+  void FinishCefDragging(const QPoint& position,
+                         int buttons,
+                         int modifiers,
+                         bool dropped);
+  void CancelCefDragging();
 
   ResizeCallback resize_callback_;
   std::shared_ptr<BrowserFrame> frame_;
@@ -130,6 +165,13 @@ class BrowserWidget final : public QWidget {
   BrowserImeHandler* ime_handler_ = nullptr;
   TabManager::TabId tab_id_ = TabManager::kInvalidTabId;
   bool is_composing_ = false;
+  bool drag_active_ = false;
+  bool cef_drag_source_active_ = false;
+  bool cef_drag_target_active_ = false;
+  CefRefPtr<CefDragData> cef_drag_data_;
+  CefRenderHandler::DragOperationsMask cef_drag_allowed_ops_ =
+      DRAG_OPERATION_NONE;
+  CefRenderHandler::DragOperation cef_drag_current_op_ = DRAG_OPERATION_NONE;
   QPoint last_mouse_pos_;
 };
 

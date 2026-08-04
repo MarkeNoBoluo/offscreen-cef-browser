@@ -13,6 +13,7 @@
 #include "browser/browser_paint_geometry.h"
 #include "browser/osr_render_handler.h"
 #include "include/cef_browser.h"
+#include "include/cef_drag_data.h"
 
 namespace offscreen {
 
@@ -33,6 +34,8 @@ class BrowserService final : public BrowserClient::Delegate {
   using LoadStateChangeCallback =
       std::function<void(bool is_loading, bool can_go_back, bool can_go_forward)>;
   using LoadErrorCallback = std::function<void(const std::string& error_text)>;
+  using StartDraggingCallback = OsrRenderHandler::StartDraggingCallback;
+  using UpdateDragCursorCallback = OsrRenderHandler::UpdateDragCursorCallback;
 
   /// 创建浏览器服务及首个帧缓存。
   BrowserService();
@@ -58,6 +61,8 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 设置 CEF 光标变更通知回调。
   /// @param callback 接收光标类型和 Win32 光标句柄的回调。
   void SetCursorChangeCallback(CursorChangeCallback callback);
+  void SetStartDraggingCallback(StartDraggingCallback callback);
+  void SetUpdateDragCursorCallback(UpdateDragCursorCallback callback);
   /// 设置 CEF 组合文本范围变更通知回调。
   /// @param callback 接收选择范围和字符矩形的回调。
   void SetImeCompositionRangeChangedCallback(
@@ -168,6 +173,38 @@ class BrowserService final : public BrowserClient::Delegate {
   /// @param delta_y 垂直滚动量。
   void SendMouseWheelEvent(int x, int y, int qt_buttons,
                             int qt_modifiers, int delta_x, int delta_y);
+  /// 通知 CEF 有外部拖拽数据进入离屏视图。
+  /// @param drag_data CEF 拖拽数据。
+  /// @param x 逻辑 x 坐标。
+  /// @param y 逻辑 y 坐标。
+  /// @param qt_buttons 当前全部按下鼠标键。
+  /// @param qt_modifiers Qt 修饰键位掩码。
+  void SendDragTargetDragEnter(CefRefPtr<CefDragData> drag_data,
+                               int x, int y, int qt_buttons,
+                               int qt_modifiers,
+                               CefBrowserHost::DragOperationsMask allowed_ops =
+                                   DRAG_OPERATION_COPY);
+  /// 通知 CEF 拖拽数据在离屏视图内移动。
+  /// @param x 逻辑 x 坐标。
+  /// @param y 逻辑 y 坐标。
+  /// @param qt_buttons 当前全部按下鼠标键。
+  /// @param qt_modifiers Qt 修饰键位掩码。
+  void SendDragTargetDragOver(int x, int y, int qt_buttons,
+                              int qt_modifiers,
+                              CefBrowserHost::DragOperationsMask allowed_ops =
+                                  DRAG_OPERATION_COPY);
+  /// 通知 CEF 拖拽数据离开离屏视图。
+  void SendDragTargetDragLeave();
+  /// 通知 CEF 拖拽数据投放到离屏视图。
+  /// @param x 逻辑 x 坐标。
+  /// @param y 逻辑 y 坐标。
+  /// @param qt_buttons 当前全部按下鼠标键。
+  /// @param qt_modifiers Qt 修饰键位掩码。
+  void SendDragTargetDrop(int x, int y, int qt_buttons, int qt_modifiers);
+  void SendDragSourceEndedAt(int x,
+                             int y,
+                             CefBrowserHost::DragOperationsMask op);
+  void SendDragSourceSystemDragEnded();
 
   // 焦点和鼠标捕获状态需要同步给 CEF，保证网页输入状态正确。
   /// 同步 Qt 焦点状态到 CEF。
@@ -248,6 +285,8 @@ class BrowserService final : public BrowserClient::Delegate {
   PaintUpdateCallback paint_update_callback_;
   CursorChangeCallback cursor_change_callback_;
   ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;
+  StartDraggingCallback start_dragging_callback_;
+  UpdateDragCursorCallback update_drag_cursor_callback_;
   bool close_when_created_ = false;
   bool is_closing_ = false;
   bool is_loading_ = false;

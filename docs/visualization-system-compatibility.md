@@ -245,6 +245,10 @@ CEF 重点配置：
 
 ## 验收清单
 
+- 本地加载 `tests/visualization_compatibility_test.html`，确认自动能力检查无阻塞级失败。
+- 本地测试页中的 Clipboard 按钮会先尝试 Async Clipboard API，失败后再尝试
+  `document.execCommand("copy"/"paste")`，用于区分 Chromium 权限限制和基础
+  剪贴板通路故障。
 - Chromium 内核版本满足 90+，推荐达到 100+，最佳达到 120+。
 - JavaScript 默认开启。
 - LocalStorage 可用且跨重启持久化。
@@ -258,3 +262,7 @@ CEF 重点配置：
 - HTTPS 页面无非预期 Mixed Content 拦截。
 - CORS 由服务端正确配置，无浏览器端全局绕过。
 - Designer 模式下 Drag & Drop、Clipboard、File API、PointerEvent、KeyboardEvent、Fullscreen API 可用。
+
+本地测试页只能覆盖浏览器基础能力。Cookie、登录态、业务 API、WebSocket、
+Mixed Content、CORS 和真实视频播放必须使用目标服务地址、目标账号和目标资源做
+现场验收。

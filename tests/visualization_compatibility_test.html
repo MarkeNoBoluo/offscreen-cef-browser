@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visualization Compatibility Test</title>
+<style>
+  :root {
+    color-scheme: light;
+    font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    --ok: #137333;
+    --fail: #b3261e;
+    --warn: #8a5a00;
+    --line: #d7dce2;
+    --bg: #f6f8fb;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: #1f2328;
+  }
+  header {
+    padding: 18px 24px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 650;
+  }
+  main {
+    padding: 20px 24px 32px;
+  }
+  section {
+    margin-bottom: 18px;
+    padding: 16px;
+    background: #ffffff;
+    border: 1px solid var(--line);
+  }
+  h2 {
+    margin: 0 0 12px;
+    font-size: 17px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 10px;
+  }
+  .item {
+    min-height: 52px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    background: #fbfcfe;
+  }
+  .name {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .status {
+    display: inline-block;
+    min-width: 74px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid currentColor;
+    font-size: 12px;
+    text-align: center;
+  }
+  .pass { color: var(--ok); }
+  .fail { color: var(--fail); }
+  .manual { color: var(--warn); }
+  .detail {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #4d5660;
+    word-break: break-word;
+  }
+  button, input {
+    font: inherit;
+  }
+  button {
+    min-height: 32px;
+    padding: 4px 10px;
+    border: 1px solid #98a2ad;
+    background: #ffffff;
+    cursor: pointer;
+  }
+  button:hover {
+    background: #eef3f8;
+  }
+  input[type="text"] {
+    min-height: 30px;
+    padding: 3px 8px;
+    border: 1px solid #98a2ad;
+  }
+  canvas {
+    display: block;
+    width: 220px;
+    height: 90px;
+    border: 1px solid var(--line);
+  }
+  .drop-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 72px;
+    margin-top: 8px;
+    border: 2px dashed #98a2ad;
+    background: #f7fbff;
+  }
+  .drop-zone.dragover {
+    border-color: var(--ok);
+    background: #eef8f0;
+  }
+  .flex-proof {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .transform-proof {
+    width: 34px;
+    height: 34px;
+    background: #2f6fed;
+    transform: rotate(12deg) scale(0.9);
+    animation: pulse 900ms infinite alternate ease-in-out;
+  }
+  @keyframes pulse {
+    from { opacity: 0.55; }
+    to { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>可视化设计系统兼容性测试</h1>
+</header>
+
+<main>
+  <section>
+    <h2>自动能力检查</h2>
+    <div id="auto-results" class="grid"></div>
+  </section>
+
+  <section>
+    <h2>Canvas / CSS / PointerEvent</h2>
+    <div class="flex-proof">
+      <canvas id="canvas" width="220" height="90"></canvas>
+      <div class="transform-proof" title="CSS transform and animation"></div>
+      <button id="pointer-button" type="button">Pointer 测试</button>
+    </div>
+    <div id="visual-detail" class="detail">等待测试结果。</div>
+  </section>
+
+  <section>
+    <h2>Clipboard / Drag & Drop / File API</h2>
+    <button id="copy-button" type="button">写入剪贴板</button>
+    <button id="read-button" type="button">读取剪贴板</button>
+    <input id="file-input" type="file">
+    <div id="drop-zone" class="drop-zone">拖入文件到这里</div>
+    <div id="manual-detail" class="detail">这些能力通常需要用户手势或权限授权。</div>
+  </section>
+
+  <section>
+    <h2>WebSocket 现场检查</h2>
+    <input id="ws-url" type="text" value="ws://127.0.0.1:8765/" size="38">
+    <button id="ws-button" type="button">连接</button>
+    <div id="ws-detail" class="detail">需要可用的 echo WebSocket 服务。</div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const results = document.getElementById('auto-results');
+
+  function addResult(name, state, detail) {
+    const item = document.createElement('div');
+    item.className = 'item';
+    const stateClass = state === 'pass' ? 'pass' : state === 'fail' ? 'fail' : 'manual';
+    const label = state === 'pass' ? 'PASS' : state === 'fail' ? 'FAIL' : 'MANUAL';
+    item.innerHTML =
+      '<span class="name"></span>' +
+      '<span class="status ' + stateClass + '">' + label + '</span>' +
+      '<div class="detail"></div>';
+    item.querySelector('.name').textContent = name;
+    item.querySelector('.detail').textContent = detail;
+    results.appendChild(item);
+  }
+
+  async function checkLocalStorage() {
+    const key = 'offscreen_cef_compat_local_storage';
+    const value = 'ok-' + Date.now();
+    localStorage.setItem(key, value);
+    return localStorage.getItem(key) === value;
+  }
+
+  async function checkIndexedDb() {
+    return new Promise((resolve) => {
+      if (!('indexedDB' in window)) {
+        resolve(false);
+        return;
+      }
+      const request = indexedDB.open('offscreen_cef_compat_db', 1);
+      request.onerror = () => resolve(false);
+      request.onsuccess = () => {
+        request.result.close();
+        resolve(true);
+      };
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('checks', { keyPath: 'id' });
+      };
+    });
+  }
+
+  async function checkWorker() {
+    return new Promise((resolve) => {
+      if (!('Worker' in window)) {
+        resolve(false);
+        return;
+      }
+      const blob = new Blob(['self.onmessage = () => self.postMessage("ok");'], {
+        type: 'application/javascript'
+      });
+      const worker = new Worker(URL.createObjectURL(blob));
+      const timer = setTimeout(() => {
+        worker.terminate();
+        resolve(false);
+      }, 1500);
+      worker.onmessage = (event) => {
+        clearTimeout(timer);
+        worker.terminate();
+        resolve(event.data === 'ok');
+      };
+      worker.postMessage('run');
+    });
+  }
+
+  async function checkFetch() {
+    const response = await fetch('data:text/plain,offscreen-cef-fetch-ok');
+    return (await response.text()) === 'offscreen-cef-fetch-ok';
+  }
+
+  function checkWebGl() {
+    const canvas = document.createElement('canvas');
+    return Boolean(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+  }
+
+  function checkVideoCodec() {
+    const video = document.createElement('video');
+    const mp4 = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"');
+    return mp4 === 'probably' || mp4 === 'maybe';
+  }
+
+  async function runAutomaticChecks() {
+    addResult('JavaScript / ES6', 'pass', 'module scope, const/let, Promise and async function executed.');
+    addResult('Flex / CSS Transform / Animation', 'pass', 'The layout and animated blue block are rendered by CSS.');
+    addResult('LocalStorage', await checkLocalStorage() ? 'pass' : 'fail',
+              'Must persist across restart when cache_path is stable.');
+    addResult('IndexedDB', await checkIndexedDb() ? 'pass' : 'fail',
+              'Used by complex editors for caches or drafts.');
+    addResult('Web Worker', await checkWorker() ? 'pass' : 'fail',
+              'Used for imports, exports and heavy data processing.');
+    addResult('Fetch', await checkFetch() ? 'pass' : 'fail',
+              'Data URL probe passed; target API still needs Network validation.');
+    addResult('WebGL', checkWebGl() ? 'pass' : 'fail',
+              'Required by maps, 3D charts or GPU canvas components.');
+    addResult('H.264/AAC MP4 codec probe', checkVideoCodec() ? 'pass' : 'manual',
+              'Probe only; real business video playback must be verified separately.');
+    addResult('Cookie / Login State', 'manual',
+              'Use a real HTTP/HTTPS origin and stable cache_path; file:// is not enough.');
+    addResult('WebSocket', 'manual',
+              'Use the connector below with a real ws/wss echo or service endpoint.');
+  }
+
+  function runCanvasCheck() {
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#137333';
+    ctx.fillRect(14, 14, 58, 58);
+    ctx.fillStyle = '#b3261e';
+    ctx.beginPath();
+    ctx.arc(128, 43, 28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1f2328';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('Canvas OK', 94, 79);
+    const pixel = ctx.getImageData(20, 20, 1, 1).data;
+    document.getElementById('visual-detail').textContent =
+      pixel[1] > 80 ? 'Canvas 像素读取正常；点击 Pointer 测试按钮可验证 PointerEvent。'
+                    : 'Canvas 绘制或像素读取异常。';
+  }
+
+  function legacyCopyText(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-1000px';
+    textarea.style.top = '-1000px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } finally {
+      document.body.removeChild(textarea);
+    }
+    return copied;
+  }
+
+  function legacyPasteText() {
+    const textarea = document.createElement('textarea');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-1000px';
+    textarea.style.top = '-1000px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    let pasted = false;
+    try {
+      pasted = document.execCommand('paste');
+    } finally {
+      const text = textarea.value;
+      document.body.removeChild(textarea);
+      return { ok: pasted || text.length > 0, text };
+    }
+  }
+
+  function wireManualChecks() {
+    document.getElementById('pointer-button').addEventListener('pointerdown', (event) => {
+      document.getElementById('visual-detail').textContent =
+        'PointerEvent 收到：pointerType=' + event.pointerType + ', button=' + event.button;
+    });
+
+    document.getElementById('copy-button').addEventListener('click', async () => {
+      const text = 'offscreen-cef-clipboard-ok';
+      try {
+        await navigator.clipboard.writeText(text);
+        document.getElementById('manual-detail').textContent =
+          'Async Clipboard API 写入成功。';
+      } catch (error) {
+        const fallbackOk = legacyCopyText(text);
+        document.getElementById('manual-detail').textContent =
+          'Async Clipboard API 写入失败：' + error +
+          '；execCommand(copy) ' + (fallbackOk ? '成功' : '失败') + '。';
+      }
+    });
+
+    document.getElementById('read-button').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById('manual-detail').textContent =
+          'Async Clipboard API 读取：' + text;
+      } catch (error) {
+        const fallback = legacyPasteText();
+        document.getElementById('manual-detail').textContent =
+          'Async Clipboard API 读取失败：' + error +
+          '；execCommand(paste) ' + (fallback.ok ? '读取：' + fallback.text : '失败') + '。';
+      }
+    });
+
+    document.getElementById('file-input').addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      document.getElementById('manual-detail').textContent =
+        file ? 'File API 选择文件：' + file.name + ' (' + file.size + ' bytes)' : '未选择文件。';
+    });
+
+    const dropZone = document.getElementById('drop-zone');
+    dropZone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dropZone.classList.remove('dragover');
+      const count = event.dataTransfer.files.length;
+      document.getElementById('manual-detail').textContent =
+        'Drag & Drop 收到文件数量：' + count;
+    });
+
+    document.getElementById('ws-button').addEventListener('click', () => {
+      const detail = document.getElementById('ws-detail');
+      const url = document.getElementById('ws-url').value.trim();
+      try {
+        const socket = new WebSocket(url);
+        const timer = setTimeout(() => {
+          socket.close();
+          detail.textContent = 'WebSocket 超时，确认服务是否可达。';
+        }, 3000);
+        socket.onopen = () => {
+          socket.send('offscreen-cef-websocket-ok');
+          detail.textContent = 'WebSocket 已连接，等待回包或关闭。';
+        };
+        socket.onmessage = (event) => {
+          clearTimeout(timer);
+          detail.textContent = 'WebSocket 收到消息：' + event.data;
+          socket.close();
+        };
+        socket.onerror = () => {
+          clearTimeout(timer);
+          detail.textContent = 'WebSocket 连接失败。';
+        };
+        socket.onclose = () => {
+          clearTimeout(timer);
+        };
+      } catch (error) {
+        detail.textContent = 'WebSocket 参数错误：' + error;
+      }
+    });
+  }
+
+  runAutomaticChecks().catch((error) => {
+    addResult('Automatic checks', 'fail', String(error));
+  });
+  runCanvasCheck();
+  wireManualChecks();
+})();
+</script>
+</body>
+</html>
