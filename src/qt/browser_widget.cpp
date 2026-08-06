@@ -11,6 +11,7 @@
 #include "browser/browser_ime_handler.h"
 #include "browser/browser_input_mapping.h"
 #include "browser/browser_service.h"
+#include "browser/render_stats_log.h"
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
@@ -202,6 +203,7 @@ void BrowserWidget::EmitRenderStats() {
     return;
   }
   DiagnosticLog(FormatRenderStatsSummary(snapshot));
+  RenderStatsLogWrite(snapshot);
   emit renderStatsUpdated(snapshot);
 }
 

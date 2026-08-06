@@ -55,9 +55,12 @@ add_library(offscreen_core STATIC
   src/browser/osr_render_log.h
   src/browser/render_stats.cpp
   src/browser/render_stats.h
+  src/browser/render_stats_log.cpp
+  src/browser/render_stats_log.h
 )
 target_include_directories(offscreen_core PUBLIC src)
 target_compile_features(offscreen_core PUBLIC cxx_std_17)
+target_link_libraries(offscreen_core PRIVATE psapi)
 target_compile_definitions(offscreen_core PRIVATE
   NOMINMAX
   WIN32_LEAN_AND_MEAN

@@ -79,10 +79,10 @@ BrowserFrameSnapshot BrowserFrame::Snapshot() const {
   snapshot.popup_rect = popup_rect_;
   if (!view_image_.isNull()) {
     snapshot.has_view = true;
-    snapshot.view_image = view_image_.copy();
+    snapshot.view_image = view_image_;
   }
   if (!popup_image_.isNull()) {
-    snapshot.popup_image = popup_image_.copy();
+    snapshot.popup_image = popup_image_;
   }
   return snapshot;
 }

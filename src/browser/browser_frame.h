@@ -17,14 +17,16 @@ struct BrowserFrameSnapshot {
   bool popup_visible = false;
   /// 弹出层相对主视图的逻辑像素位置。
   BrowserViewRect popup_rect;
-  /// 主视图的独立图像副本。
+  /// 主视图的共享不可变帧引用，绘制端不得修改（调用非 const 方法会触发
+  /// detach 导致性能回归）。
   QImage view_image;
-  /// 弹出层的独立图像副本。
+  /// 弹出层的共享不可变帧引用，绘制端不得修改（同上）。
   QImage popup_image;
 };
 
 // 保存最新的视图帧和弹出层帧。CEF 提供的缓冲区只在 OnPaint 回调期间有效，
-// 因此写入时必须复制；绘制端通过 Snapshot 取得独立副本，避免跨线程访问 QImage。
+// 因此写入时必须复制；写入后帧数据永不再原地修改，绘制端通过 Snapshot 共享
+// 同一不可变 QImage（隐式共享仅 bump 原子引用计数，O(1) 浅拷贝）。
 class BrowserFrame {
  public:
   /// 创建空帧缓存。
@@ -48,8 +50,8 @@ class BrowserFrame {
   /// 更新弹出层相对主视图的位置。
   /// @param rect CEF 提供的逻辑像素矩形。
   void SetPopupRect(BrowserViewRect rect);
-  /// 读取可在 Qt 绘制线程安全使用的帧副本。
-  /// @return 主视图和弹出层的当前快照。
+  /// 读取可在 Qt 绘制线程安全使用的帧快照。
+  /// @return 主视图和弹出层的当前快照；图像字段为共享不可变帧引用，绘制端只读。
   BrowserFrameSnapshot Snapshot() const;
 
  private:
