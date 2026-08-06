@@ -32,8 +32,11 @@ offscreen::RenderStatsSnapshot MakeSnapshot() {
   s.enabled = true;
   s.window_frames = 30;
   s.window_paint_events = 28;
+  s.window_accelerated_frames = 5;
+  s.window_dropped_frames = 2;
   s.window_seconds = 1.0;
   s.fps = 30.0;
+  s.qt_fps = 28.0;
   s.frame_interval_ms.count = 10;
   s.frame_interval_ms.sum_ms = 333.0;  // avg = 33.3
   // 阶段顺序：onpaint, set_view_image, schedule_delay, snapshot, draw_image。
@@ -51,7 +54,7 @@ offscreen::RenderStatsSnapshot MakeSnapshot() {
   s.last_height = 1080;
   s.dirty_frames = 10;
   s.dirty_area_sum_px = 1000;  // dirty_area_avg = 100
-  s.dirty_rect_count_sum = 20; // dirty_count_avg = 2
+  s.dirty_rect_count_sum = 20;  // dirty_count_avg = 2
   return s;
 }
 
@@ -60,11 +63,13 @@ offscreen::RenderStatsSnapshot MakeSnapshot() {
 void test_format_header() {
   const std::string header = offscreen::FormatRenderStatsCsvHeader();
   expect_eq(header,
-            "timestamp,elapsed_ms,fps,window_frames,window_paint_events,"
+            "timestamp,elapsed_ms,cef_paint_fps,qt_paint_fps,window_frames,"
+            "window_paint_events,accelerated_frames,dropped_frames,"
             "onpaint_avg_ms,set_view_image_avg_ms,schedule_delay_avg_ms,"
             "snapshot_avg_ms,draw_image_avg_ms,"
             "frame_interval_avg_ms,dirty_area_avg_px,dirty_count_avg,"
-            "buffer_width,buffer_height,buffer_bytes,cpu_percent,working_set_mb",
+            "buffer_width,buffer_height,buffer_bytes,cpu_percent,working_set_mb,"
+            "gpu_requested,gpu_backend,cef_subprocess_count",
             "csv header");
 }
 
@@ -77,21 +82,41 @@ void test_format_row() {
   // 时间戳前缀为 HH:MM:SS.mmm（第 3 个字符是冒号）。
   expect_true(row.size() > 12, "row has timestamp prefix");
   expect_true(row[2] == ':', "timestamp format HH:MM:SS.mmm");
-  // elapsed_ms = window_seconds*1000 = 1000；fps=30；frames/pe。
-  expect_true(row.find("1000,30,30,28,") != std::string::npos,
+  // elapsed_ms = window_seconds*1000 = 1000；cef_fps=30、qt_fps=28、frames/pe。
+  expect_true(row.find("1000,30,28,30,28,") != std::string::npos,
               "row elapsed/fps/frames");
+  // 加速帧=5、掉帧=2。
+  expect_true(row.find("30,28,5,2,") != std::string::npos,
+              "row accelerated/dropped");
   // 阶段均值：2,3,0.5,2,0.1。
   expect_true(row.find("2,3,0.5,2,0.1,") != std::string::npos,
               "row stage averages");
   // frame_interval=33.3、dirty_area_avg=100、dirty_count_avg=2。
   expect_true(row.find("33.3,100,2,") != std::string::npos,
               "row interval + dirty averages");
-  // buffer 尺寸与字节：1920x1080 → 1920*1080*4 = 8294400。
+  // buffer 尺寸与字节：1920x1080 且 1920*1080*4 = 8294400。
   expect_true(row.find("1920,1080,8294400,") != std::string::npos,
               "row buffer size and bytes");
-  // cpu=25.5、工作集 104857600 B → 100 MB。
-  expect_true(row.find("25.5,100\n") != std::string::npos,
+  // cpu=25.5、工作集 104857600 B 即 100 MB。
+  expect_true(row.find("25.5,100,") != std::string::npos,
               "row cpu and working set");
+  // GPU 列：默认 gpu_requested=1、backend=default、子进程数 >= 0。
+  expect_true(row.find(",1,default,") != std::string::npos,
+              "row gpu columns");
+}
+
+// --- 显式 GPU 信息重载 ---
+
+void test_format_row_with_explicit_gpu_info() {
+  const offscreen::RenderStatsSnapshot s = MakeSnapshot();
+  offscreen::GpuBackendInfo gpu;
+  gpu.gpu_requested = false;
+  gpu.backend = "angle/d3d11";
+  gpu.subprocess_count = 7;
+  const std::string row =
+      offscreen::FormatRenderStatsCsvRow(s, 0.0, 0, gpu);
+  expect_true(row.find(",0,angle/d3d11,7\n") != std::string::npos,
+              "row explicit gpu info");
 }
 
 // --- dirty 除零保护：dirty_frames=0 时均值为 0 ---
@@ -149,7 +174,7 @@ void test_write_to_disk() {
               "row1 contains buffer");
   expect_true(row2.find("1920,1080,8294400") != std::string::npos,
               "row2 contains buffer");
-  expect_true(row1.find("1000,30,30,28,") != std::string::npos,
+  expect_true(row1.find("1000,30,28,30,28,") != std::string::npos,
               "row1 contains metrics");
 
   std::string extra;
@@ -176,13 +201,26 @@ void test_cpu_sample_regression() {
   expect_true(cpu > 1.0, "cpu percent non-zero after busy wait");
 }
 
+// --- GPU 环境信息采样：命令行开关 + 子进程计数 ---
+
+void test_gpu_backend_info() {
+  const offscreen::GpuBackendInfo info = offscreen::SampleGpuBackendInfo();
+  // 测试进程未传 --disable-gpu 且未指定 use-angle/use-gl。
+  expect_true(info.gpu_requested, "gpu requested by default");
+  expect_eq(info.backend, std::string("default"), "default backend");
+  // 子进程计数 >= 0（本进程不算；测试进程名下不应有额外子进程）。
+  expect_true(info.subprocess_count >= 0, "subprocess count non-negative");
+}
+
 }  // namespace
 
 int main() {
   test_format_header();
   test_format_row();
+  test_format_row_with_explicit_gpu_info();
   test_format_row_dirty_guard();
   test_write_to_disk();
   test_cpu_sample_regression();
+  test_gpu_backend_info();
   return 0;
 }

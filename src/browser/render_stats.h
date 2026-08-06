@@ -47,6 +47,7 @@ struct RenderFrameSample {
   int64_t dirty_area_px = 0;
   int64_t buffer_bytes = 0;  // width*height*4
   bool is_popup = false;
+  bool accelerated = false;  // true = OnAcceleratedPaint 共享纹理路径
   std::array<double, 5> stage_ms{};  // -1.0 = 该帧未观测到该阶段
 };
 
@@ -56,8 +57,12 @@ struct RenderStatsSnapshot {
   uint64_t total_frames = 0;  // 生命周期累计（不回零）
   uint64_t window_frames = 0;  // 窗口内 OnPaint 帧数
   uint64_t window_paint_events = 0;
+  uint64_t window_accelerated_frames = 0;  // 窗口内 OnAcceleratedPaint 帧数
+  uint64_t total_accelerated_frames = 0;   // 生命周期累计加速帧
+  uint64_t window_dropped_frames = 0;  // 窗口内掉帧数（帧间隔 > 阈值）
   double window_seconds = 0;  // steady_clock 实算，非定时器 tick
-  double fps = 0;             // window_frames / window_seconds
+  double fps = 0;             // CEF OnPaint 帧率（cef_paint_fps）
+  double qt_fps = 0;          // Qt paintEvent 帧率（qt_paint_fps/display_fps）
   RenderStageStats frame_interval_ms;
   std::array<RenderStageStats, 5> stages{};
   int last_width = 0;
@@ -82,6 +87,8 @@ std::string FormatRenderStatsSummary(const RenderStatsSnapshot& snapshot);
 class RenderStats {
  public:
   static constexpr std::size_t kDefaultRingCapacity = 120;
+  /// 帧间隔超过该阈值（毫秒）计为一次掉帧；用于量化渲染停顿。
+  static constexpr double kDroppedFrameThresholdMs = 100.0;
 
   /// 创建统计核心。
   /// @param ring_capacity 最近帧环形缓冲容量；至少为 1。
@@ -107,6 +114,16 @@ class RenderStats {
   /// @param is_popup 是否为弹出层帧。
   void OnPaintBegin(int width, int height, int dirty_count,
                     int64_t dirty_area_px, bool is_popup);
+  /// 开始记录一帧 OnAcceleratedPaint（共享纹理路径，无 CPU buffer）。
+  /// 与 OnPaintBegin 等价，但帧标记为 accelerated 且不产生 SetViewImage
+  /// 拷贝阶段（共享纹理路径下该阶段记 0 ms）。
+  /// @param width 物理像素宽度。
+  /// @param height 物理像素高度。
+  /// @param dirty_count 脏区域数量。
+  /// @param dirty_area_px 脏区总面积（物理像素）。
+  /// @param is_popup 是否为弹出层帧。
+  void OnAcceleratedPaintBegin(int width, int height, int dirty_count,
+                               int64_t dirty_area_px, bool is_popup);
   /// 开始计时 SetViewImage/SetPopupImage（拷贝 #1）。
   void OnSetViewImageBegin();
   /// 结束计时 SetViewImage/SetPopupImage。
@@ -153,6 +170,7 @@ class RenderStats {
 
   // 当前 OnPaint 帧构建状态。
   bool frame_build_active_ = false;
+  bool frame_is_accelerated_ = false;
   double onpaint_begin_ms_ = 0;
   bool setview_active_ = false;
   double setview_begin_ms_ = 0;
@@ -182,6 +200,9 @@ class RenderStats {
   uint64_t total_frames_ = 0;
   uint64_t window_frames_ = 0;
   uint64_t window_paint_events_ = 0;
+  uint64_t window_accelerated_frames_ = 0;
+  uint64_t total_accelerated_frames_ = 0;
+  uint64_t window_dropped_frames_ = 0;
   double window_begin_ms_ = 0;
   double last_onpaint_end_ms_ = 0;
   RenderStageStats frame_interval_agg_;

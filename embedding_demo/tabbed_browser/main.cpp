@@ -6,6 +6,9 @@
 
 #include <windows.h>
 
+#include "app/diagnostic_log.h"
+#include "browser/osr_render_log.h"
+#include "browser/render_stats_log.h"
 #include "offscreen_cef/cef_runtime.h"
 #include "offscreen_cef/cef_tabbed_browser.h"
 
@@ -62,6 +65,9 @@ class TabbedBrowserDemoWindow final : public QMainWindow {
 /// @param argv 进程参数数组。
 /// @return CEF 子进程退出码、Qt 事件循环结果或失败码。
 int main(int argc, char* argv[]) {
+  offscreen::SetDiagnosticLogFileToApplicationDirectory();
+  offscreen::SetOsrRenderLogFileToApplicationDirectory();
+  offscreen::SetRenderStatsLogFileToApplicationDirectory();
   if (const auto exit_code = offscreen::CefRuntime::ExecuteSubprocess(
           ::GetModuleHandleW(nullptr))) {
     return *exit_code;

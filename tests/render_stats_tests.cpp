@@ -123,6 +123,84 @@ void test_frame_interval_and_fps() {
   expect_dbl_near(snap.fps, expected_fps, 0.001, "fps matches frames/seconds");
 }
 
+// --- Qt 显示帧率口径：qt_fps 独立于 cef fps ---
+
+void test_qt_fps_independent() {
+  offscreen::RenderStats stats;
+  for (int i = 0; i < 4; ++i) {
+    PushFrame(stats, 100, 50, 1, 100, false);
+  }
+  // 4 帧 OnPaint 只对应 2 次 paintEvent（Qt update 合并）。
+  stats.OnPaintEventBegin();
+  stats.OnPaintEventEnd();
+  stats.OnPaintEventBegin();
+  stats.OnPaintEventEnd();
+
+  const offscreen::RenderStatsSnapshot snap = stats.Snapshot();
+  expect_eq(snap.window_frames, static_cast<uint64_t>(4), "four cef frames");
+  expect_eq(snap.window_paint_events, static_cast<uint64_t>(2),
+            "two qt paint events");
+  expect_true(snap.window_seconds > 0.0, "window seconds positive");
+  const double expected_qt_fps =
+      static_cast<double>(snap.window_paint_events) / snap.window_seconds;
+  expect_dbl_near(snap.qt_fps, expected_qt_fps, 0.001,
+                  "qt_fps matches paint_events/seconds");
+}
+
+// --- OnAcceleratedPaint：共享纹理路径帧 ---
+
+void test_accelerated_frames() {
+  offscreen::RenderStats stats;
+  // 1 帧软件路径 + 2 帧加速路径。
+  PushFrame(stats, 100, 50, 1, 100, false);
+  stats.OnAcceleratedPaintBegin(100, 50, 1, 100, false);
+  stats.OnPaintEnd();
+  stats.OnAcceleratedPaintBegin(100, 50, 2, 200, true);
+  stats.OnPaintEnd();
+
+  const offscreen::RenderStatsSnapshot snap = stats.Snapshot();
+  expect_eq(snap.total_frames, static_cast<uint64_t>(3), "total frames");
+  expect_eq(snap.window_frames, static_cast<uint64_t>(3), "window frames");
+  expect_eq(snap.window_accelerated_frames, static_cast<uint64_t>(2),
+            "window accelerated frames");
+  expect_eq(snap.total_accelerated_frames, static_cast<uint64_t>(2),
+            "total accelerated frames");
+  // 加速帧无 CPU 拷贝：SetViewImage 阶段记 0 ms。
+  // 三帧中仅第一帧（软件路径）贡献微小耗时，加速帧贡献严格 0。
+  expect_eq(snap.stages[StageIndex(RenderStage::kSetViewImage)].count,
+            static_cast<uint64_t>(3), "setview counted for all frames");
+  expect_true(snap.stages[StageIndex(RenderStage::kSetViewImage)].sum_ms <
+                  0.01,
+              "setview sum only from first software frame");
+
+  expect_eq(snap.recent_frames.size(), static_cast<std::size_t>(3),
+            "three samples");
+  expect_true(!snap.recent_frames[0].accelerated, "first frame software path");
+  expect_true(snap.recent_frames[1].accelerated, "second frame accelerated");
+  expect_true(snap.recent_frames[2].accelerated, "third frame accelerated");
+  expect_eq(snap.recent_frames[2].is_popup, true, "third frame popup");
+  expect_eq(snap.recent_frames[2].stage_ms[StageIndex(RenderStage::kSetViewImage)],
+            0.0, "accelerated sample setview stage zero");
+}
+
+// --- 掉帧计数：帧间隔超过阈值 ---
+
+void test_dropped_frames() {
+  offscreen::RenderStats stats;
+  PushFrame(stats, 100, 50, 1, 100, false);
+  // 间隔 150ms > 100ms 阈值：计 1 次掉帧。
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  PushFrame(stats, 100, 50, 1, 100, false);
+  // 间隔 5ms：不掉帧。
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  PushFrame(stats, 100, 50, 1, 100, false);
+
+  const offscreen::RenderStatsSnapshot snap = stats.Snapshot();
+  expect_eq(snap.window_frames, static_cast<uint64_t>(3), "three frames");
+  expect_eq(snap.window_dropped_frames, static_cast<uint64_t>(1),
+            "one dropped frame");
+}
+
 // --- 阶段 min/max/avg/last 聚合 ---
 
 void test_stage_aggregation() {
@@ -275,7 +353,11 @@ void test_format_summary_contains_fields() {
   expect_true(text.find("buf=") != std::string::npos, "has buf");
   expect_true(text.find("frames=") != std::string::npos, "has frames");
   expect_true(text.find("pe=") != std::string::npos, "has pe");
-  expect_true(text.find("fps=") != std::string::npos, "has fps");
+  expect_true(text.find("accel=") != std::string::npos, "has accel");
+  expect_true(text.find("drop=") != std::string::npos, "has drop");
+  expect_true(text.find("cef_fps=") != std::string::npos, "has cef_fps");
+  expect_true(text.find("qt_fps=") != std::string::npos, "has qt_fps");
+  expect_true(text.find("coal=") != std::string::npos, "has coal");
   expect_true(text.find("onpaint") != std::string::npos, "has onpaint");
   expect_true(text.find("set_view_image") != std::string::npos,
               "has set_view_image");
@@ -293,6 +375,9 @@ int main() {
   test_default_enabled_and_toggle();
   test_single_frame_recorded();
   test_frame_interval_and_fps();
+  test_qt_fps_independent();
+  test_accelerated_frames();
+  test_dropped_frames();
   test_stage_aggregation();
   test_ring_eviction();
   test_draw_stages_written_back();

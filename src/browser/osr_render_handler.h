@@ -88,6 +88,18 @@ class OsrRenderHandler final : public CefRenderHandler {
                const void* buffer,
                int width,
                int height) override;
+  /// 接收 CEF 共享纹理帧（CefWindowInfo::shared_texture_enabled=true 时调用，
+  /// 仅 Windows）。当前实现只做统计与日志采集，不读取纹理内容；
+  /// 采集到的 accelerated 帧计数直接进入 RenderStats/CSV，作为 GPU
+  /// 渲染路径验收证据。
+  /// @param browser 产生纹理帧的浏览器。
+  /// @param type 主视图或弹出层类型。
+  /// @param dirtyRects 本次变化的物理像素区域。
+  /// @param shared_handle D3D11 Texture2D 共享句柄（OpenSharedResource 可访问）。
+  void OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
+                          PaintElementType type,
+                          const RectList& dirtyRects,
+                          void* shared_handle) override;
   bool StartDragging(CefRefPtr<CefBrowser> browser,
                      CefRefPtr<CefDragData> drag_data,
                      DragOperationsMask allowed_ops,

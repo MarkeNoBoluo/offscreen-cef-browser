@@ -63,6 +63,8 @@ bool RenderStats::enabled() const {
 void RenderStats::ResetWindowLocked(double now_ms) {
   window_frames_ = 0;
   window_paint_events_ = 0;
+  window_accelerated_frames_ = 0;
+  window_dropped_frames_ = 0;
   window_begin_ms_ = now_ms;
   last_onpaint_end_ms_ = 0;
   frame_interval_agg_ = {};
@@ -78,6 +80,29 @@ void RenderStats::OnPaintBegin(int width, int height, int dirty_count,
   if (!enabled_.load(std::memory_order_relaxed)) return;
   std::lock_guard<std::mutex> lock(mutex_);
   frame_build_active_ = true;
+  frame_is_accelerated_ = false;
+  onpaint_begin_ms_ = SteadyNowMsDouble();
+  setview_active_ = false;
+  setview_ms_ = 0;
+  frame_width_ = width;
+  frame_height_ = height;
+  frame_dirty_count_ = dirty_count;
+  frame_dirty_area_px_ = dirty_area_px;
+  frame_is_popup_ = is_popup;
+  last_width_ = width;
+  last_height_ = height;
+  last_dirty_count_ = dirty_count;
+  last_dirty_area_px_ = dirty_area_px;
+}
+
+void RenderStats::OnAcceleratedPaintBegin(int width, int height,
+                                          int dirty_count,
+                                          int64_t dirty_area_px,
+                                          bool is_popup) {
+  if (!enabled_.load(std::memory_order_relaxed)) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  frame_build_active_ = true;
+  frame_is_accelerated_ = true;
   onpaint_begin_ms_ = SteadyNowMsDouble();
   setview_active_ = false;
   setview_ms_ = 0;
@@ -128,14 +153,23 @@ void RenderStats::OnPaintEnd() {
     setview_active_ = false;
     setview_ms_ = 0;
   }
+  // 加速帧（OnAcceleratedPaint）无 CPU 拷贝：SetViewImage 阶段记 0 ms。
   RecordStageStat(stage_aggs_[static_cast<int>(RenderStage::kSetViewImage)],
-                  setview_ms_);
+                  frame_is_accelerated_ ? 0.0 : setview_ms_);
   if (last_onpaint_end_ms_ != 0) {
     RecordStageStat(frame_interval_agg_, interval_ms);
+    // 帧间隔超过阈值视为一次渲染停顿（掉帧）。
+    if (interval_ms > RenderStats::kDroppedFrameThresholdMs) {
+      ++window_dropped_frames_;
+    }
   }
 
   ++total_frames_;
   ++window_frames_;
+  if (frame_is_accelerated_) {
+    ++total_accelerated_frames_;
+    ++window_accelerated_frames_;
+  }
   dirty_area_sum_px_ += frame_dirty_area_px_;
   dirty_rect_count_sum_ += frame_dirty_count_;
   ++dirty_frames_;
@@ -151,9 +185,11 @@ void RenderStats::OnPaintEnd() {
   sample.buffer_bytes =
       static_cast<int64_t>(frame_width_) * frame_height_ * 4;
   sample.is_popup = frame_is_popup_;
+  sample.accelerated = frame_is_accelerated_;
   sample.stage_ms.fill(-1.0);
   sample.stage_ms[static_cast<int>(RenderStage::kOnPaint)] = onpaint_ms;
-  sample.stage_ms[static_cast<int>(RenderStage::kSetViewImage)] = setview_ms_;
+  sample.stage_ms[static_cast<int>(RenderStage::kSetViewImage)] =
+      frame_is_accelerated_ ? 0.0 : setview_ms_;
 
   PushFrameLocked(std::move(sample));
 
@@ -260,6 +296,9 @@ RenderStatsSnapshot RenderStats::SnapshotLocked() const {
   snapshot.total_frames = total_frames_;
   snapshot.window_frames = window_frames_;
   snapshot.window_paint_events = window_paint_events_;
+  snapshot.window_accelerated_frames = window_accelerated_frames_;
+  snapshot.total_accelerated_frames = total_accelerated_frames_;
+  snapshot.window_dropped_frames = window_dropped_frames_;
   if (window_frames_ > 0 || window_paint_events_ > 0) {
     snapshot.window_seconds =
         std::max(0.0, (SteadyNowMsDouble() - window_begin_ms_) / 1000.0);
@@ -268,6 +307,10 @@ RenderStatsSnapshot RenderStats::SnapshotLocked() const {
                      ? static_cast<double>(window_frames_) /
                            snapshot.window_seconds
                      : 0.0;
+  snapshot.qt_fps = (snapshot.window_seconds > 0)
+                        ? static_cast<double>(window_paint_events_) /
+                              snapshot.window_seconds
+                        : 0.0;
   snapshot.frame_interval_ms = frame_interval_agg_;
   snapshot.stages = stage_aggs_;
   snapshot.last_width = last_width_;
@@ -310,8 +353,13 @@ std::string FormatRenderStatsSummary(const RenderStatsSnapshot& snapshot) {
   stream << "RenderStats buf=" << snapshot.last_width << "x"
          << snapshot.last_height << " frames=" << snapshot.window_frames
          << " pe=" << snapshot.window_paint_events
+         << " accel=" << snapshot.window_accelerated_frames
+         << " drop=" << snapshot.window_dropped_frames
          << " dt_ms=" << static_cast<int64_t>(snapshot.window_seconds * 1000.0)
-         << " fps=" << std::setprecision(1) << snapshot.fps
+         << " cef_fps=" << std::setprecision(1) << snapshot.fps
+         << " qt_fps=" << snapshot.qt_fps
+         << " coal=" << static_cast<int64_t>(snapshot.window_frames) -
+                            static_cast<int64_t>(snapshot.window_paint_events)
          << " ival_avg=" << std::setprecision(2)
          << snapshot.frame_interval_ms.avg_ms() << " min="
          << snapshot.frame_interval_ms.min_ms << " max="

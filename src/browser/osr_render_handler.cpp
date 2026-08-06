@@ -217,6 +217,68 @@ void OsrRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser,
   }
 }
 
+void OsrRenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
+                                          PaintElementType type,
+                                          const RectList& dirtyRects,
+                                          void* shared_handle) {
+  double scale;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    scale = device_scale_factor_;
+  }
+
+  int width = 0;
+  int height = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    width = view_rect_.width;
+    height = view_rect_.height;
+  }
+
+  int64_t dirty_area_px = 0;
+  for (const auto& r : dirtyRects) {
+    dirty_area_px += static_cast<int64_t>(r.width) * r.height;
+  }
+  if (render_stats_) {
+    render_stats_->OnAcceleratedPaintBegin(
+        width, height, static_cast<int>(dirtyRects.size()), dirty_area_px,
+        type == PET_POPUP);
+  }
+
+  OsrRenderLogRecord record;
+  record.event = "OnAcceleratedPaint";
+  record.browser_id = browser ? browser->GetIdentifier() : -1;
+  record.w = width;
+  record.h = height;
+  record.scale = scale;
+  record.type = type == PET_VIEW ? "ACCELERATED_VIEW" : "ACCELERATED_POPUP";
+  record.dirty_count = static_cast<int>(dirtyRects.size());
+  record.dirty_area_px = dirty_area_px;
+  {
+    std::ostringstream detail;
+    detail << "shared_handle=" << HexValue(
+        reinterpret_cast<uintptr_t>(shared_handle));
+    record.detail = detail.str();
+  }
+  OsrRenderLogWrite(record);
+
+  // 共享纹理路径下帧内容位于 GPU 侧；本采集点只统计与日志，不更新
+  // BrowserFrame（CPU buffer）。Qt 侧如需显示需实现 D3D11 纹理读取
+  // （OpenSharedResource），属于 GPU upload 原型，另行评估。
+  std::vector<BrowserViewRect> dip_rects;
+  for (const auto& r : dirtyRects) {
+    BrowserPhysicalRect phys{r.x, r.y, r.width, r.height};
+    dip_rects.push_back(PhysicalRectToDipUpdateRect(phys, scale));
+  }
+  if (paint_update_callback_) {
+    paint_update_callback_(dip_rects);
+  }
+
+  if (render_stats_) {
+    render_stats_->OnPaintEnd();
+  }
+}
+
 bool OsrRenderHandler::StartDragging(CefRefPtr<CefBrowser> browser,
                                      CefRefPtr<CefDragData> drag_data,
                                      DragOperationsMask allowed_ops,
