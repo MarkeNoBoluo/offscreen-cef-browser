@@ -63,6 +63,8 @@ bool RenderStats::enabled() const {
 void RenderStats::ResetWindowLocked(double now_ms) {
   window_frames_ = 0;
   window_paint_events_ = 0;
+  window_d3d_to_gl_frames_ = 0;
+  window_cpu_readback_fallback_frames_ = 0;
   window_accelerated_frames_ = 0;
   window_dropped_frames_ = 0;
   window_coalesced_frames_ = 0;
@@ -298,6 +300,20 @@ void RenderStats::OnPaintEventEnd() {
   paint_schedule_ms_ = -1.0;
 }
 
+void RenderStats::OnGpuFramePresented(GpuPresentPath path) {
+  if (!enabled_.load(std::memory_order_relaxed)) return;
+  std::lock_guard<std::mutex> lock(mutex_);
+  gpu_present_path_ = path;
+  if (path == GpuPresentPath::kWglDxInterop) {
+    ++window_d3d_to_gl_frames_;
+    ++total_d3d_to_gl_frames_;
+  } else if (path == GpuPresentPath::kCpuGlUpload ||
+             path == GpuPresentPath::kQImageFallback) {
+    ++window_cpu_readback_fallback_frames_;
+    ++total_cpu_readback_fallback_frames_;
+  }
+}
+
 RenderStatsSnapshot RenderStats::Snapshot() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return SnapshotLocked();
@@ -316,6 +332,13 @@ RenderStatsSnapshot RenderStats::SnapshotLocked() const {
   snapshot.total_frames = total_frames_;
   snapshot.window_frames = window_frames_;
   snapshot.window_paint_events = window_paint_events_;
+  snapshot.gpu_present_path = GpuPresentPathName(gpu_present_path_);
+  snapshot.window_d3d_to_gl_frames = window_d3d_to_gl_frames_;
+  snapshot.total_d3d_to_gl_frames = total_d3d_to_gl_frames_;
+  snapshot.window_cpu_readback_fallback_frames =
+      window_cpu_readback_fallback_frames_;
+  snapshot.total_cpu_readback_fallback_frames =
+      total_cpu_readback_fallback_frames_;
   snapshot.window_accelerated_frames = window_accelerated_frames_;
   snapshot.total_accelerated_frames = total_accelerated_frames_;
   snapshot.window_dropped_frames = window_dropped_frames_;
@@ -379,6 +402,9 @@ std::string FormatRenderStatsSummary(const RenderStatsSnapshot& snapshot) {
          << snapshot.last_height << " frames=" << snapshot.window_frames
          << " pe=" << snapshot.window_paint_events
          << " accel=" << snapshot.window_accelerated_frames
+         << " gpu_path=" << snapshot.gpu_present_path
+         << " d3d_gl=" << snapshot.window_d3d_to_gl_frames
+         << " cpu_fallback=" << snapshot.window_cpu_readback_fallback_frames
          << " drop=" << snapshot.window_dropped_frames
          << " dt_ms=" << static_cast<int64_t>(snapshot.window_seconds * 1000.0)
          << " cef_fps=" << std::setprecision(1) << snapshot.fps

@@ -721,7 +721,9 @@ std::string FormatRenderStatsCsvHeader() {
          "process_tree_cpu,process_tree_working_set_mb,"
          "gpu_requested,gpu_backend,gpu_actual_backend,"
          "gpu_init_error_count,gpu_process_restarted_count,"
-         "cef_subprocess_count";
+         "cef_subprocess_count,gpu_present_path,d3d_to_gl_frames,"
+         "cpu_readback_fallback_frames,total_d3d_to_gl_frames,"
+         "total_cpu_readback_fallback_frames";
 }
 
 /// 选择窗口内掉帧的主导原因。
@@ -808,7 +810,12 @@ std::string FormatRenderStatsCsvRow(const RenderStatsSnapshot& snapshot,
          << CsvField(gpu_info.actual_backend) << ','
          << gpu_info.gpu_init_error_count << ','
          << gpu_info.gpu_process_restarted_count << ','
-         << gpu_info.subprocess_count << '\n';
+         << gpu_info.subprocess_count << ','
+         << CsvField(snapshot.gpu_present_path) << ','
+         << snapshot.window_d3d_to_gl_frames << ','
+         << snapshot.window_cpu_readback_fallback_frames << ','
+         << snapshot.total_d3d_to_gl_frames << ','
+         << snapshot.total_cpu_readback_fallback_frames << '\n';
   return stream.str();
 }
 

@@ -33,6 +33,11 @@ offscreen::RenderStatsSnapshot MakeSnapshot() {
   s.window_frames = 30;
   s.window_paint_events = 28;
   s.window_accelerated_frames = 5;
+  s.gpu_present_path = "wgl_dx_interop";
+  s.window_d3d_to_gl_frames = 4;
+  s.window_cpu_readback_fallback_frames = 1;
+  s.total_d3d_to_gl_frames = 40;
+  s.total_cpu_readback_fallback_frames = 3;
   s.window_dropped_frames = 2;
   s.window_seconds = 1.0;
   s.fps = 30.0;
@@ -74,7 +79,9 @@ void test_format_header() {
             "process_tree_cpu,process_tree_working_set_mb,"
             "gpu_requested,gpu_backend,gpu_actual_backend,"
             "gpu_init_error_count,gpu_process_restarted_count,"
-            "cef_subprocess_count",
+            "cef_subprocess_count,gpu_present_path,d3d_to_gl_frames,"
+            "cpu_readback_fallback_frames,total_d3d_to_gl_frames,"
+            "total_cpu_readback_fallback_frames",
             "csv header");
 }
 
@@ -108,6 +115,8 @@ void test_format_row() {
   // GPU 列：默认 gpu_requested=1、backend=default、子进程数 >= 0。
   expect_true(row.find(",1,default,") != std::string::npos,
               "row gpu columns");
+  expect_true(row.find(",wgl_dx_interop,4,1,40,3\n") != std::string::npos,
+              "row GPU presentation columns");
 }
 
 // --- 显式 GPU 信息重载 ---
@@ -123,7 +132,8 @@ void test_format_row_with_explicit_gpu_info() {
   gpu.subprocess_count = 7;
   const std::string row =
       offscreen::FormatRenderStatsCsvRow(s, 0.0, 0, gpu);
-  expect_true(row.find(",0,angle/d3d11,software,2,1,7\n") != std::string::npos,
+  expect_true(row.find(",0,angle/d3d11,software,2,1,7,wgl_dx_interop,"
+                       "4,1,40,3\n") != std::string::npos,
               "row explicit gpu info");
 }
 

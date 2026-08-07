@@ -18,6 +18,7 @@ add_offscreen_core_test(browser_paint_geometry_tests browser_paint_geometry_test
 add_offscreen_core_test(browser_input_mapping_tests browser_input_mapping_tests.cpp)
 add_offscreen_core_test(browser_ime_core_tests browser_ime_core_tests.cpp imm32)
 add_offscreen_core_test(render_stats_tests render_stats_tests.cpp)
+add_offscreen_core_test(gpu_frame_state_tests gpu_frame_state_tests.cpp)
 add_offscreen_core_test(osr_render_log_tests osr_render_log_tests.cpp)
 add_offscreen_core_test(render_stats_log_tests render_stats_log_tests.cpp)
 
@@ -32,6 +33,7 @@ add_custom_target(offscreen_core_tests
     browser_input_mapping_tests
     browser_ime_core_tests
     render_stats_tests
+    gpu_frame_state_tests
     osr_render_log_tests
     render_stats_log_tests
 )

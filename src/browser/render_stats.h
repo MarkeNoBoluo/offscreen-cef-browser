@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "browser/gpu_frame_state.h"
+
 namespace offscreen {
 
 // OSR 渲染链性能采集的命名阶段。枚举值顺序必须与
@@ -57,6 +59,11 @@ struct RenderStatsSnapshot {
   uint64_t total_frames = 0;  // 生命周期累计（不回零）
   uint64_t window_frames = 0;  // 窗口内 OnPaint 帧数
   uint64_t window_paint_events = 0;
+  std::string gpu_present_path = "unknown";
+  uint64_t window_d3d_to_gl_frames = 0;
+  uint64_t total_d3d_to_gl_frames = 0;
+  uint64_t window_cpu_readback_fallback_frames = 0;
+  uint64_t total_cpu_readback_fallback_frames = 0;
   uint64_t window_accelerated_frames = 0;  // 窗口内 OnAcceleratedPaint 帧数
   uint64_t total_accelerated_frames = 0;   // 生命周期累计加速帧
   uint64_t window_dropped_frames = 0;  // 窗口内掉帧数（帧间隔 > 阈值）
@@ -153,6 +160,9 @@ class RenderStats {
   /// 结束一次 paintEvent：把 schedule/snapshot/draw 阶段写回最近样本。
   void OnPaintEventEnd();
 
+  /// 记录 Qt 端实际完成的一帧呈现路径。
+  void OnGpuFramePresented(GpuPresentPath path);
+
   /// 导出当前快照（不重置窗口聚合）。
   RenderStatsSnapshot Snapshot() const;
   /// 导出当前快照并重置窗口聚合（供周期定时器调用）。
@@ -208,6 +218,11 @@ class RenderStats {
   uint64_t total_frames_ = 0;
   uint64_t window_frames_ = 0;
   uint64_t window_paint_events_ = 0;
+  GpuPresentPath gpu_present_path_ = GpuPresentPath::kUnknown;
+  uint64_t window_d3d_to_gl_frames_ = 0;
+  uint64_t total_d3d_to_gl_frames_ = 0;
+  uint64_t window_cpu_readback_fallback_frames_ = 0;
+  uint64_t total_cpu_readback_fallback_frames_ = 0;
   uint64_t window_accelerated_frames_ = 0;
   uint64_t total_accelerated_frames_ = 0;
   uint64_t window_dropped_frames_ = 0;

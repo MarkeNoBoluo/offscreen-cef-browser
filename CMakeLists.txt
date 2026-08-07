@@ -51,6 +51,8 @@ add_library(offscreen_core STATIC
   src/browser/browser_ime_core.h
   src/browser/browser_paint_geometry.cpp
   src/browser/browser_paint_geometry.h
+  src/browser/gpu_frame_state.cpp
+  src/browser/gpu_frame_state.h
   src/browser/osr_render_log.cpp
   src/browser/osr_render_log.h
   src/browser/render_stats.cpp

@@ -1,4 +1,5 @@
 #include "browser/render_stats.h"
+#include "browser/gpu_frame_state.h"
 
 #include <atomic>
 #include <chrono>
@@ -181,6 +182,37 @@ void test_accelerated_frames() {
   expect_eq(snap.recent_frames[2].is_popup, true, "third frame popup");
   expect_eq(snap.recent_frames[2].stage_ms[StageIndex(RenderStage::kSetViewImage)],
             0.0, "accelerated sample setview stage zero");
+}
+
+void test_gpu_present_path_counters_and_window_reset() {
+  offscreen::RenderStats stats;
+  stats.OnGpuFramePresented(offscreen::GpuPresentPath::kWglDxInterop);
+  stats.OnGpuFramePresented(offscreen::GpuPresentPath::kWglDxInterop);
+  stats.OnGpuFramePresented(offscreen::GpuPresentPath::kQImageFallback);
+
+  const offscreen::RenderStatsSnapshot first = stats.SnapshotAndResetWindow();
+  expect_eq(first.window_d3d_to_gl_frames, uint64_t{2},
+            "window interop frames");
+  expect_eq(first.total_d3d_to_gl_frames, uint64_t{2},
+            "total interop frames");
+  expect_eq(first.window_cpu_readback_fallback_frames, uint64_t{1},
+            "window fallback frames");
+  expect_eq(first.total_cpu_readback_fallback_frames, uint64_t{1},
+            "total fallback frames");
+  expect_eq(first.gpu_present_path, std::string("qimage_fallback"),
+            "last present path");
+
+  const offscreen::RenderStatsSnapshot second = stats.Snapshot();
+  expect_eq(second.window_d3d_to_gl_frames, uint64_t{0},
+            "window interop reset");
+  expect_eq(second.total_d3d_to_gl_frames, uint64_t{2},
+            "total interop preserved");
+  expect_eq(second.window_cpu_readback_fallback_frames, uint64_t{0},
+            "window fallback reset");
+  expect_eq(second.total_cpu_readback_fallback_frames, uint64_t{1},
+            "total fallback preserved");
+  expect_eq(second.gpu_present_path, std::string("qimage_fallback"),
+            "last path preserved");
 }
 
 // --- 合帧与额外 Qt 重绘计数 ---
@@ -381,6 +413,10 @@ void test_format_summary_contains_fields() {
   expect_true(text.find("frames=") != std::string::npos, "has frames");
   expect_true(text.find("pe=") != std::string::npos, "has pe");
   expect_true(text.find("accel=") != std::string::npos, "has accel");
+  expect_true(text.find("gpu_path=") != std::string::npos, "has gpu path");
+  expect_true(text.find("d3d_gl=") != std::string::npos, "has interop count");
+  expect_true(text.find("cpu_fallback=") != std::string::npos,
+              "has fallback count");
   expect_true(text.find("drop=") != std::string::npos, "has drop");
   expect_true(text.find("cef_fps=") != std::string::npos, "has cef_fps");
   expect_true(text.find("qt_fps=") != std::string::npos, "has qt_fps");
@@ -404,6 +440,7 @@ int main() {
   test_frame_interval_and_fps();
   test_qt_fps_independent();
   test_accelerated_frames();
+  test_gpu_present_path_counters_and_window_reset();
   test_coalesced_and_extra_qt_paints();
   test_dropped_frames();
   test_stage_aggregation();
