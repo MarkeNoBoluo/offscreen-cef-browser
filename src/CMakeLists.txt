@@ -25,6 +25,8 @@ set(OFFSCREEN_WIDGET_SRCS
   browser/tab_manager.h
   qt/browser_widget.cpp
   qt/browser_widget.h
+  qt/browser_gl_renderer.cpp
+  qt/browser_gl_renderer.h
   qt/cef_tabbed_browser.cpp
   qt/cef_web_view.cpp
   offscreen_cef/cef_tabbed_browser.h
@@ -64,9 +66,12 @@ target_link_libraries(offscreen_cef_widgets
   PUBLIC
     offscreen_core
     offscreen_cef_runtime
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
   PRIVATE
     d3d11
     dxgi
+    opengl32
 )
 target_compile_features(offscreen_cef_widgets PUBLIC cxx_std_17)
 target_compile_definitions(offscreen_cef_widgets PRIVATE

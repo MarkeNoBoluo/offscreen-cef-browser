@@ -17,6 +17,9 @@ enum class GpuPresentPath : uint8_t {
 };
 
 const char* GpuPresentPathName(GpuPresentPath path);
+GpuPresentPath ChooseGpuPresentPath(bool wgl_dx_interop_available,
+                                    bool open_gl_available,
+                                    bool qimage_available);
 
 struct GpuFramePublication {
   uint64_t resource_generation = 0;

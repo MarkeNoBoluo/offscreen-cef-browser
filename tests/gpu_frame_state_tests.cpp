@@ -57,11 +57,31 @@ void test_view_and_popup_generations_are_independent() {
   expect_eq(popup.frame_generation, uint64_t{1}, "popup frame");
 }
 
+void test_present_path_selection() {
+  expect_eq(static_cast<int>(
+                offscreen::ChooseGpuPresentPath(true, true, false)),
+            static_cast<int>(offscreen::GpuPresentPath::kWglDxInterop),
+            "interop is preferred");
+  expect_eq(static_cast<int>(
+                offscreen::ChooseGpuPresentPath(false, true, true)),
+            static_cast<int>(offscreen::GpuPresentPath::kCpuGlUpload),
+            "OpenGL upload fallback");
+  expect_eq(static_cast<int>(
+                offscreen::ChooseGpuPresentPath(false, false, true)),
+            static_cast<int>(offscreen::GpuPresentPath::kQImageFallback),
+            "QImage fallback");
+  expect_eq(static_cast<int>(
+                offscreen::ChooseGpuPresentPath(false, false, false)),
+            static_cast<int>(offscreen::GpuPresentPath::kUnknown),
+            "no available presentation path");
+}
+
 }  // namespace
 
 int main() {
   test_same_resource_increments_only_frame_generation();
   test_size_or_format_change_increments_resource_generation();
   test_view_and_popup_generations_are_independent();
+  test_present_path_selection();
   return 0;
 }

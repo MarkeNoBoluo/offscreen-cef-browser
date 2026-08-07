@@ -16,6 +16,21 @@ const char* GpuPresentPathName(GpuPresentPath path) {
   return "unknown";
 }
 
+GpuPresentPath ChooseGpuPresentPath(bool wgl_dx_interop_available,
+                                    bool open_gl_available,
+                                    bool qimage_available) {
+  if (wgl_dx_interop_available) {
+    return GpuPresentPath::kWglDxInterop;
+  }
+  if (open_gl_available) {
+    return GpuPresentPath::kCpuGlUpload;
+  }
+  if (qimage_available) {
+    return GpuPresentPath::kQImageFallback;
+  }
+  return GpuPresentPath::kUnknown;
+}
+
 GpuFramePublication GpuFramePublicationState::Publish(GpuFrameKind kind,
                                                        int width,
                                                        int height,

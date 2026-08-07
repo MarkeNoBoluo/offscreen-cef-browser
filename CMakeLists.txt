@@ -103,7 +103,7 @@ if(OFFSCREEN_BUILD_APP)
     message(FATAL_ERROR "This build requires CEF major version 100")
   endif()
 
-  find_package(Qt6 6.9.3 EXACT REQUIRED COMPONENTS Widgets)
+  find_package(Qt6 6.9.3 EXACT REQUIRED COMPONENTS Widgets OpenGL OpenGLWidgets)
   file(TO_CMAKE_PATH "${Qt6_DIR}" QT6_CMAKE_DIR)
   if(NOT QT6_CMAKE_DIR MATCHES "(^|/)${OFFSCREEN_QT_PACKAGE}(/|$)")
     message(FATAL_ERROR "This build requires the Qt 6.9.3 ${OFFSCREEN_QT_PACKAGE} package")
