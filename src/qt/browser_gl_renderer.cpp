@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <sstream>
 #include <utility>
 
@@ -358,6 +359,10 @@ GpuPresentPath BrowserGlRenderer::Render(
   bool drew_view = false;
   GpuPresentPath path = GpuPresentPath::kUnknown;
   if (impl_->interop_supported && view_gpu.texture) {
+    std::unique_lock<std::mutex> gpu_access;
+    if (view_gpu.access_mutex) {
+      gpu_access = std::unique_lock<std::mutex>(*view_gpu.access_mutex);
+    }
     drew_view = impl_->DrawGpu(&impl_->view_gpu, view_gpu, 0, 0,
                                viewport_width, viewport_height,
                                viewport_width, viewport_height);
@@ -378,6 +383,10 @@ GpuPresentPath BrowserGlRenderer::Render(
     const BrowserViewRect& rect = cpu_frame.popup_rect;
     bool popup_drawn = false;
     if (path == GpuPresentPath::kWglDxInterop && popup_gpu.texture) {
+      std::unique_lock<std::mutex> gpu_access;
+      if (popup_gpu.access_mutex) {
+        gpu_access = std::unique_lock<std::mutex>(*popup_gpu.access_mutex);
+      }
       popup_drawn = impl_->DrawGpu(
           &impl_->popup_gpu, popup_gpu, rect.x, rect.y, rect.width,
           rect.height, viewport_width, viewport_height);

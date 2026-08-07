@@ -15,6 +15,7 @@
 namespace offscreen {
 
 class RenderStats;
+class GpuFrameBridge;
 
 using PaintUpdateCallback =
     std::function<void(const std::vector<BrowserViewRect>&)>;
@@ -43,6 +44,7 @@ class OsrRenderHandler final : public CefRenderHandler {
   OsrRenderHandler(BrowserViewRect view_rect,
                    double device_scale_factor,
                    std::shared_ptr<BrowserFrame> frame,
+                   std::shared_ptr<GpuFrameBridge> gpu_frame_bridge,
                    PaintUpdateCallback paint_update_callback,
                    std::shared_ptr<RenderStats> render_stats);
 
@@ -144,6 +146,7 @@ class OsrRenderHandler final : public CefRenderHandler {
   BrowserViewRect view_rect_;
   double device_scale_factor_ = 1.0;
   std::shared_ptr<BrowserFrame> frame_;
+  std::shared_ptr<GpuFrameBridge> gpu_frame_bridge_;
   std::shared_ptr<RenderStats> render_stats_;
   PaintUpdateCallback paint_update_callback_;
   ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;

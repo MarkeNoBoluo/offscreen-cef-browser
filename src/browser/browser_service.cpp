@@ -6,6 +6,7 @@
 
 #include "app/diagnostic_log.h"
 #include "browser/browser_frame.h"
+#include "browser/gpu_frame_bridge.h"
 #include "browser/browser_input_mapping.h"
 #include "browser/render_stats.h"
 #include "include/cef_frame.h"
@@ -63,6 +64,7 @@ CefMouseEvent MakeCefMouseEvent(int x, int y, int qt_buttons,
 
 BrowserService::BrowserService()
     : frame_(std::make_shared<BrowserFrame>()),
+      gpu_frame_bridge_(std::make_shared<GpuFrameBridge>()),
       render_stats_(std::make_shared<RenderStats>()) {
   DiagnosticLog("BrowserService constructed frame=" +
                 HexValue(reinterpret_cast<uintptr_t>(frame_.get())));
@@ -119,6 +121,7 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
   }
   render_handler_ = new OsrRenderHandler(initial_view_rect,
                                           initial_device_scale_factor, frame_,
+                                          gpu_frame_bridge_,
                                           paint_update_callback_,
                                           render_stats_);
   if (ime_composition_range_changed_callback_) {
@@ -372,6 +375,10 @@ std::string BrowserService::last_error() const {
 
 std::shared_ptr<BrowserFrame> BrowserService::frame() const {
   return frame_;
+}
+
+std::shared_ptr<GpuFrameBridge> BrowserService::gpu_frame_bridge() const {
+  return gpu_frame_bridge_;
 }
 
 std::shared_ptr<RenderStats> BrowserService::render_stats() const {

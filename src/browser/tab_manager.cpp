@@ -128,6 +128,7 @@ TabManager::TabId TabManager::CreateTab(const std::string& initial_url) {
 
     auto* widget = new BrowserWidget();
     widget->SetFrame(entry->browser_service->frame());
+    widget->SetGpuFrameBridge(entry->browser_service->gpu_frame_bridge());
     widget->SetRenderStats(entry->browser_service->render_stats());
     widget->SetBrowserService(entry->browser_service.get());
     widget->SetTabId(id);

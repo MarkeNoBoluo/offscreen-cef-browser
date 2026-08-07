@@ -19,6 +19,7 @@
 namespace offscreen {
 
 class BrowserFrame;
+class GpuFrameBridge;
 class RenderStats;
 
 // 单个 CEF 离屏浏览器的协调者：负责创建、关闭，以及在 Qt 与 CEF
@@ -155,6 +156,7 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 获取供 Qt 绘制使用的共享帧缓存。
   /// @return 浏览器帧缓存。
   std::shared_ptr<BrowserFrame> frame() const;
+  std::shared_ptr<GpuFrameBridge> gpu_frame_bridge() const;
   /// 获取渲染性能统计实例。
   /// @return 渲染统计核心；与浏览器服务同生命周期。
   std::shared_ptr<RenderStats> render_stats() const;
@@ -349,6 +351,7 @@ class BrowserService final : public BrowserClient::Delegate {
   CefRefPtr<OsrRenderHandler> render_handler_;
   CefRefPtr<BrowserClient> client_;
   std::shared_ptr<BrowserFrame> frame_;
+  std::shared_ptr<GpuFrameBridge> gpu_frame_bridge_;
   std::shared_ptr<RenderStats> render_stats_;
   PaintUpdateCallback paint_update_callback_;
   CursorChangeCallback cursor_change_callback_;

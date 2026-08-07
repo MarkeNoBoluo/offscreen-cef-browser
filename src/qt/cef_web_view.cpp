@@ -42,6 +42,7 @@ CefWebView::CefWebView(QWidget* parent) : QWidget(parent) {
   browser_service_ = std::make_unique<BrowserService>();
   browser_widget_ = new BrowserWidget(this);
   browser_widget_->SetFrame(browser_service_->frame());
+  browser_widget_->SetGpuFrameBridge(browser_service_->gpu_frame_bridge());
   browser_widget_->SetRenderStats(browser_service_->render_stats());
   browser_widget_->SetBrowserService(browser_service_.get());
   layout->addWidget(browser_widget_);

@@ -8,6 +8,7 @@
 #include <dxgi.h>
 
 #include "app/diagnostic_log.h"
+#include "browser/gpu_frame_bridge.h"
 #include "browser/osr_render_log.h"
 #include "browser/render_stats.h"
 
@@ -17,11 +18,13 @@ OsrRenderHandler::OsrRenderHandler(
     BrowserViewRect view_rect,
     double device_scale_factor,
     std::shared_ptr<BrowserFrame> frame,
+    std::shared_ptr<GpuFrameBridge> gpu_frame_bridge,
     PaintUpdateCallback paint_update_callback,
     std::shared_ptr<RenderStats> render_stats)
     : view_rect_(view_rect),
       device_scale_factor_(NormalizeDeviceScaleFactor(device_scale_factor)),
       frame_(std::move(frame)),
+      gpu_frame_bridge_(std::move(gpu_frame_bridge)),
       render_stats_(std::move(render_stats)),
       paint_update_callback_(std::move(paint_update_callback)) {
   std::ostringstream stream;
@@ -266,18 +269,26 @@ void OsrRenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
   }
   OsrRenderLogWrite(record);
 
-  // 读取共享纹理（OpenSharedResource → staging → Map）并复用
-  // SetViewImage/SetPopupImage 更新 BrowserFrame，使 Qt 侧照常显示。
-  const bool read_ok = ReadSharedTexture(type, dirtyRects, shared_handle, scale);
-  if (read_ok) {
-    record.detail = "shared_handle=" +
-                    HexValue(reinterpret_cast<uintptr_t>(shared_handle)) +
-                    " read=ok";
+  // Prefer the application-owned D3D11 texture path. Only bridge or interop
+  // failures enter the existing staging/Map/QImage visibility fallback.
+  const GpuFrameKind kind =
+      type == PET_POPUP ? GpuFrameKind::kPopup : GpuFrameKind::kView;
+  GpuFrameCopyResult gpu_copy;
+  if (gpu_frame_bridge_ && gpu_frame_bridge_->interop_available()) {
+    gpu_copy = gpu_frame_bridge_->CopyFromSharedHandle(kind, shared_handle);
   } else {
-    record.detail = "shared_handle=" +
-                    HexValue(reinterpret_cast<uintptr_t>(shared_handle)) +
-                    " read=fail";
+    gpu_copy.error = "wgl_dx_interop_unavailable";
   }
+  const bool read_ok =
+      gpu_copy.success
+          ? false
+          : ReadSharedTexture(type, dirtyRects, shared_handle, scale);
+  record.detail =
+      "shared_handle=" +
+      HexValue(reinterpret_cast<uintptr_t>(shared_handle)) +
+      " gpu_copy=" + (gpu_copy.success ? "ok" : "fail") +
+      " fallback_read=" + (read_ok ? "ok" : "skipped_or_fail") +
+      (gpu_copy.error.empty() ? "" : " error=" + gpu_copy.error);
   OsrRenderLogWrite(record);
 
   std::vector<BrowserViewRect> dip_rects;

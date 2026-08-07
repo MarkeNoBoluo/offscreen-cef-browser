@@ -42,7 +42,9 @@ void BrowserApp::OnBeforeCommandLineProcessing(
   command_line->AppendSwitch("use-alloy-style");
   command_line->AppendSwitch("enable-gpu");
   command_line->AppendSwitch("enable-accelerated-video-decode");
-  DiagnosticLog("BrowserApp appended switches: use-alloy-style, enable-gpu, enable-accelerated-video-decode");
+  command_line->AppendSwitchWithValue("use-angle", "d3d11");
+  DiagnosticLog("BrowserApp appended switches: use-alloy-style, enable-gpu, "
+                "enable-accelerated-video-decode, use-angle=d3d11");
 }
 
 /// 将 CEF 消息泵请求转发给 Qt 调度器。

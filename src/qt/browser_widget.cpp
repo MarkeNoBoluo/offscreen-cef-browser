@@ -2,17 +2,20 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <sstream>
 #include <utility>
 
 #include "app/diagnostic_log.h"
 #include "browser/browser_frame.h"
+#include "browser/gpu_frame_bridge.h"
 #include "browser/browser_ime_core.h"
 #include "browser/browser_ime_handler.h"
 #include "browser/browser_input_mapping.h"
 #include "browser/browser_service.h"
 #include "browser/osr_render_log.h"
 #include "browser/render_stats_log.h"
+#include "qt/browser_gl_renderer.h"
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
@@ -27,8 +30,6 @@
 #include <QMimeData>
 #include <QMetaObject>
 #include <QMouseEvent>
-#include <QPainter>
-#include <QPaintEvent>
 #include <QPointer>
 #include <QRegion>
 #include <QResizeEvent>
@@ -149,7 +150,9 @@ void BrowserWidget::HandleImeCompositionMessage(WPARAM wParam,
   }
 }
 
-BrowserWidget::BrowserWidget(QWidget* parent) : QWidget(parent) {
+BrowserWidget::BrowserWidget(QWidget* parent)
+    : QOpenGLWidget(parent),
+      gl_renderer_(std::make_unique<BrowserGlRenderer>()) {
   setAttribute(Qt::WA_NativeWindow, true);
   setAttribute(Qt::WA_DontCreateNativeAncestors, false);
   setAttribute(Qt::WA_InputMethodEnabled, true);
@@ -164,7 +167,16 @@ BrowserWidget::BrowserWidget(QWidget* parent) : QWidget(parent) {
   DiagnosticLog("BrowserWidget constructed");
 }
 
-BrowserWidget::~BrowserWidget() = default;
+BrowserWidget::~BrowserWidget() {
+  if (gpu_frame_bridge_) {
+    gpu_frame_bridge_->SetInteropAvailable(false);
+  }
+  if (context() && gl_renderer_) {
+    makeCurrent();
+    gl_renderer_->Shutdown();
+    doneCurrent();
+  }
+}
 
 HWND BrowserWidget::NativeParentHandle() const {
   const HWND handle = reinterpret_cast<HWND>(winId());
@@ -191,6 +203,20 @@ void BrowserWidget::SetFrame(std::shared_ptr<BrowserFrame> frame) {
   frame_ = std::move(frame);
   DiagnosticLog("BrowserWidget::SetFrame frame=" +
                 HexValue(reinterpret_cast<uintptr_t>(frame_.get())));
+}
+
+void BrowserWidget::SetGpuFrameBridge(
+    std::shared_ptr<GpuFrameBridge> gpu_frame_bridge) {
+  if (gpu_frame_bridge_) {
+    gpu_frame_bridge_->SetInteropAvailable(false);
+  }
+  gpu_frame_bridge_ = std::move(gpu_frame_bridge);
+  if (gpu_frame_bridge_ && context() && gl_renderer_) {
+    gpu_frame_bridge_->SetInteropAvailable(
+        gl_renderer_->interop_available());
+  }
+  DiagnosticLog("BrowserWidget::SetGpuFrameBridge bridge=" +
+                HexValue(reinterpret_cast<uintptr_t>(gpu_frame_bridge_.get())));
 }
 
 void BrowserWidget::SetRenderStats(std::shared_ptr<RenderStats> stats) {
@@ -671,7 +697,7 @@ void BrowserWidget::ScheduleFrameUpdate(
 }
 
 void BrowserWidget::resizeEvent(QResizeEvent* event) {
-  QWidget::resizeEvent(event);
+  QOpenGLWidget::resizeEvent(event);
   static std::atomic<int> resize_event_count{0};
   if (ShouldDiagnosticLog(resize_event_count, 20, 50)) {
     std::ostringstream stream;
@@ -686,75 +712,94 @@ void BrowserWidget::resizeEvent(QResizeEvent* event) {
   }
 }
 
-void BrowserWidget::paintEvent(QPaintEvent* event) {
-  QPainter painter(this);
+void BrowserWidget::initializeGL() {
+  const bool initialized = gl_renderer_ && gl_renderer_->Initialize();
+  if (gpu_frame_bridge_) {
+    gpu_frame_bridge_->SetInteropAvailable(
+        initialized && gl_renderer_->interop_available());
+  }
+  DiagnosticLog("BrowserWidget::initializeGL initialized=" +
+                std::string(initialized ? "true" : "false") +
+                " wgl_dx_interop=" +
+                (initialized && gl_renderer_->interop_available()
+                     ? "available"
+                     : "unavailable"));
+}
+
+void BrowserWidget::paintGL() {
   static std::atomic<int> paint_event_count{0};
   RenderStats* const stats = render_stats_.get();
-
-  if (!frame_) {
-    if (ShouldDiagnosticLog(paint_event_count, 40, 100)) {
-      DiagnosticLog("BrowserWidget::paintEvent frame=null event_rect=" +
-                    std::to_string(event->rect().x()) + "," +
-                    std::to_string(event->rect().y()) + " " +
-                    std::to_string(event->rect().width()) + "x" +
-                    std::to_string(event->rect().height()));
-    }
-    painter.fillRect(rect(), QColor(240, 240, 240));
-    return;
-  }
-
   if (stats) {
     stats->OnPaintEventBegin();
-  }
-  if (stats) {
     stats->OnSnapshotBegin();
   }
-  BrowserFrameSnapshot snapshot = frame_->Snapshot();
+
+  BrowserFrameSnapshot cpu_snapshot;
+  if (frame_) {
+    cpu_snapshot = frame_->Snapshot();
+  }
+  GpuFrameSnapshot view_gpu;
+  GpuFrameSnapshot popup_gpu;
+  if (gpu_frame_bridge_) {
+    view_gpu = gpu_frame_bridge_->Snapshot(GpuFrameKind::kView);
+    popup_gpu = gpu_frame_bridge_->Snapshot(GpuFrameKind::kPopup);
+  }
   if (stats) {
     stats->OnSnapshotDone();
   }
-  if (ShouldDiagnosticLog(paint_event_count, 40, 100)) {
-    std::ostringstream stream;
-    stream << "BrowserWidget::paintEvent has_view="
-           << (snapshot.has_view ? "true" : "false")
-           << " event_rect=" << event->rect().x() << "," << event->rect().y()
-           << " " << event->rect().width() << "x" << event->rect().height()
-           << " widget=" << width() << "x" << height();
-    if (snapshot.has_view) {
-      stream << " view_image=" << snapshot.view_image.width() << "x"
-             << snapshot.view_image.height() << " dpr="
-             << snapshot.view_image.devicePixelRatio();
-    }
-    stream << " popup_visible="
-           << (snapshot.popup_visible ? "true" : "false")
-           << " popup_image_null="
-           << (snapshot.popup_image.isNull() ? "true" : "false");
-    DiagnosticLog(stream.str());
-  }
 
-  if (!snapshot.has_view) {
-    painter.fillRect(rect(), QColor(240, 240, 240));
-    if (stats) {
-      stats->OnPaintEventEnd();
-    }
-    return;
-  }
+  const double scale = CurrentDeviceScaleFactor();
+  const int viewport_width =
+      std::max(1, static_cast<int>(std::lround(width() * scale)));
+  const int viewport_height =
+      std::max(1, static_cast<int>(std::lround(height() * scale)));
+  cpu_snapshot.popup_rect.x =
+      static_cast<int>(std::lround(cpu_snapshot.popup_rect.x * scale));
+  cpu_snapshot.popup_rect.y =
+      static_cast<int>(std::lround(cpu_snapshot.popup_rect.y * scale));
+  cpu_snapshot.popup_rect.width =
+      static_cast<int>(std::lround(cpu_snapshot.popup_rect.width * scale));
+  cpu_snapshot.popup_rect.height =
+      static_cast<int>(std::lround(cpu_snapshot.popup_rect.height * scale));
 
   if (stats) {
     stats->OnDrawImageBegin();
   }
-  painter.drawImage(QPoint(0, 0), snapshot.view_image);
-
-  if (snapshot.popup_visible && !snapshot.popup_image.isNull()) {
-    painter.drawImage(QPoint(snapshot.popup_rect.x, snapshot.popup_rect.y),
-                      snapshot.popup_image);
-  }
+  const GpuPresentPath path =
+      gl_renderer_ ? gl_renderer_->Render(view_gpu, popup_gpu, cpu_snapshot,
+                                          viewport_width, viewport_height)
+                   : GpuPresentPath::kUnknown;
   if (stats) {
     stats->OnDrawImageDone();
   }
 
+  if (view_gpu.texture && path != GpuPresentPath::kWglDxInterop &&
+      gpu_frame_bridge_) {
+    gpu_frame_bridge_->SetInteropAvailable(false);
+  }
   if (stats) {
+    if (path == GpuPresentPath::kWglDxInterop &&
+        view_gpu.publication.frame_generation !=
+            last_presented_gpu_frame_generation_) {
+      last_presented_gpu_frame_generation_ =
+          view_gpu.publication.frame_generation;
+      stats->OnGpuFramePresented(path);
+    } else if (path == GpuPresentPath::kCpuGlUpload) {
+      stats->OnGpuFramePresented(path);
+    }
     stats->OnPaintEventEnd();
+  }
+
+  if (ShouldDiagnosticLog(paint_event_count, 40, 100)) {
+    std::ostringstream stream;
+    stream << "BrowserWidget::paintGL path=" << GpuPresentPathName(path)
+           << " widget=" << width() << "x" << height()
+           << " viewport=" << viewport_width << "x" << viewport_height
+           << " gpu_frame=" << view_gpu.publication.frame_generation
+           << " cpu_view=" << (cpu_snapshot.has_view ? "true" : "false")
+           << " popup_visible="
+           << (cpu_snapshot.popup_visible ? "true" : "false");
+    DiagnosticLog(stream.str());
   }
 }
 

@@ -1,11 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
 
 #include <QPoint>
-#include <QWidget>
+#include <QOpenGLWidget>
 #include <windows.h>
 
 #include "browser/browser_geometry.h"
@@ -26,11 +27,13 @@ class QTimer;
 namespace offscreen {
 
 class BrowserFrame;
+class BrowserGlRenderer;
 class BrowserImeHandler;
 class BrowserService;
+class GpuFrameBridge;
 
 // 将 BrowserFrame 中的离屏像素绘制到 Qt 控件，并把 Qt/Windows 输入转发给 CEF。
-class BrowserWidget final : public QWidget {
+class BrowserWidget final : public QOpenGLWidget {
   Q_OBJECT
  public:
   using ResizeCallback =
@@ -54,6 +57,7 @@ class BrowserWidget final : public QWidget {
   /// 绑定供 paintEvent 读取的共享帧缓存。
   /// @param frame 浏览器服务提供的帧缓存。
   void SetFrame(std::shared_ptr<BrowserFrame> frame);
+  void SetGpuFrameBridge(std::shared_ptr<GpuFrameBridge> gpu_frame_bridge);
   /// 绑定渲染性能统计核心；由 1s 定时器周期导出快照。
   /// @param stats 浏览器服务提供的统计核心。
   void SetRenderStats(std::shared_ptr<RenderStats> stats);
@@ -105,12 +109,13 @@ class BrowserWidget final : public QWidget {
   void renderStatsUpdated(const RenderStatsSnapshot& snapshot);
 
  protected:
+  void initializeGL() override;
+  void paintGL() override;
   /// 将 Qt 尺寸和设备缩放变化通知浏览器服务。
   /// @param event Qt 尺寸事件。
   void resizeEvent(QResizeEvent* event) override;
   /// 绘制主视图及可见的 CEF 弹出层帧。
   /// @param event Qt 绘制事件。
-  void paintEvent(QPaintEvent* event) override;
 
   // Qt 事件在这里转换成鼠标、滚轮、键盘、焦点等 CEF 输入事件。
   /// 转发鼠标按下事件。
@@ -185,7 +190,10 @@ class BrowserWidget final : public QWidget {
 
   ResizeCallback resize_callback_;
   std::shared_ptr<BrowserFrame> frame_;
+  std::shared_ptr<GpuFrameBridge> gpu_frame_bridge_;
   std::shared_ptr<RenderStats> render_stats_;
+  std::unique_ptr<BrowserGlRenderer> gl_renderer_;
+  uint64_t last_presented_gpu_frame_generation_ = 0;
   QTimer* stats_timer_ = nullptr;
   BrowserService* browser_service_ = nullptr;
   BrowserImeHandler* ime_handler_ = nullptr;

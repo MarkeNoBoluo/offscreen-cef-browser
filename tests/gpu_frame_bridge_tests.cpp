@@ -30,6 +30,9 @@ void expect_true(bool actual, const char* label) {
 
 void test_empty_bridge_snapshot() {
   offscreen::GpuFrameBridge bridge;
+  expect_true(!bridge.interop_available(), "interop initially unavailable");
+  bridge.SetInteropAvailable(true);
+  expect_true(bridge.interop_available(), "interop availability published");
   const auto snapshot = bridge.Snapshot(offscreen::GpuFrameKind::kView);
   expect_true(!snapshot.texture, "empty bridge has no texture");
   expect_eq(snapshot.publication.frame_generation, uint64_t{0},

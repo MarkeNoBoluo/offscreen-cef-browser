@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -20,6 +21,7 @@ struct GpuFrameSnapshot {
   Microsoft::WRL::ComPtr<ID3D11Device> device;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
   GpuFramePublication publication;
+  std::shared_ptr<std::mutex> access_mutex;
 };
 
 class GpuFrameBridge {
@@ -29,6 +31,8 @@ class GpuFrameBridge {
   GpuFrameCopyResult CopyFromSharedHandle(GpuFrameKind kind,
                                           void* shared_handle);
   GpuFrameSnapshot Snapshot(GpuFrameKind kind) const;
+  void SetInteropAvailable(bool available);
+  bool interop_available() const;
 
  private:
   struct FrameSlot {
@@ -44,12 +48,13 @@ class GpuFrameBridge {
   FrameSlot& SelectSlot(GpuFrameKind kind);
   const FrameSlot& SelectSlot(GpuFrameKind kind) const;
 
-  mutable std::mutex mutex_;
+  std::shared_ptr<std::mutex> access_mutex_ = std::make_shared<std::mutex>();
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
   FrameSlot view_;
   FrameSlot popup_;
   GpuFramePublicationState publication_state_;
+  bool interop_available_ = false;
 };
 
 }  // namespace offscreen

@@ -34,7 +34,7 @@ GpuFrameCopyResult GpuFrameBridge::CopyFromSharedHandle(
     return Failure("null_shared_handle");
   }
 
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(*access_mutex_);
   if (!EnsureD3D11Device()) {
     return Failure("create_d3d11_device_failed");
   }
@@ -69,12 +69,23 @@ GpuFrameCopyResult GpuFrameBridge::CopyFromSharedHandle(
 }
 
 GpuFrameSnapshot GpuFrameBridge::Snapshot(GpuFrameKind kind) const {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(*access_mutex_);
   GpuFrameSnapshot snapshot;
   snapshot.device = device_;
   snapshot.texture = SelectSlot(kind).texture;
   snapshot.publication = publication_state_.Current(kind);
+  snapshot.access_mutex = access_mutex_;
   return snapshot;
+}
+
+void GpuFrameBridge::SetInteropAvailable(bool available) {
+  std::lock_guard<std::mutex> lock(*access_mutex_);
+  interop_available_ = available;
+}
+
+bool GpuFrameBridge::interop_available() const {
+  std::lock_guard<std::mutex> lock(*access_mutex_);
+  return interop_available_;
 }
 
 bool GpuFrameBridge::EnsureD3D11Device() {
