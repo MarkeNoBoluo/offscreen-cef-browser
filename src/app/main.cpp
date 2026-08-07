@@ -30,6 +30,7 @@
 #include "browser/browser_service.h"
 #include "browser/osr_render_log.h"
 #include "browser/render_stats_log.h"
+#include "browser/run_lifecycle.h"
 #include "browser/tab_manager.h"
 #include "offscreen_cef/cef_runtime.h"
 #include "qt/browser_widget.h"
@@ -604,6 +605,8 @@ int main(int argc, char* argv[]) {
   offscreen::SetDiagnosticLogFileToApplicationDirectory();
   offscreen::SetOsrRenderLogFileToApplicationDirectory();
   offscreen::SetRenderStatsLogFileToApplicationDirectory();
+  // 诊断日志底层已替换为 utils 日志模块（Logger/LogStream）。
+  UTILS_LOG_INFO << "diagnostic log module now backed by utils::base::Logger";
   offscreen::DiagnosticLog("main entered");
   // CEF 子进程必须在创建 QApplication 前分流；子进程不进入宿主的 Qt 事件循环。
   if (const auto exit_code = offscreen::CefRuntime::ExecuteSubprocess(
@@ -612,6 +615,9 @@ int main(int argc, char* argv[]) {
                              std::to_string(*exit_code));
     return *exit_code;
   }
+
+  // 宿主进程路径：记录运行生命周期（run_id/run_start），退出时回写闭环。
+  offscreen::RunLifecycleBegin();
 
   QApplication qt_app(argc, argv);
 
@@ -653,7 +659,10 @@ int main(int argc, char* argv[]) {
                            std::to_string(result));
 
   // 标签页关闭是异步的；若仍有视图登记，拒绝提前关闭 CEF 运行时。
-  if (!runtime.Shutdown()) {
+  const bool shutdown_completed = runtime.Shutdown();
+  // 运行闭环审计：无论 shutdown 是否完成都记录 run_end/exit_code。
+  offscreen::RunLifecycleEnd(result, shutdown_completed);
+  if (!shutdown_completed) {
     offscreen::DiagnosticLog("CefRuntime::Shutdown deferred: browser still open");
     return 1;
   }

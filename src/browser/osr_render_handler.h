@@ -5,6 +5,9 @@
 #include <mutex>
 #include <vector>
 
+#include <d3d11.h>
+#include <wrl/client.h>
+
 #include "browser/browser_frame.h"
 #include "browser/browser_paint_geometry.h"
 #include "include/cef_render_handler.h"
@@ -89,9 +92,9 @@ class OsrRenderHandler final : public CefRenderHandler {
                int width,
                int height) override;
   /// 接收 CEF 共享纹理帧（CefWindowInfo::shared_texture_enabled=true 时调用，
-  /// 仅 Windows）。当前实现只做统计与日志采集，不读取纹理内容；
-  /// 采集到的 accelerated 帧计数直接进入 RenderStats/CSV，作为 GPU
-  /// 渲染路径验收证据。
+  /// 仅 Windows）。通过 OpenSharedResource 读取共享纹理到 CPU buffer，
+  /// 复用 SetViewImage 显示路径；同时把 accelerated 帧计数进入
+  /// RenderStats/CSV。
   /// @param browser 产生纹理帧的浏览器。
   /// @param type 主视图或弹出层类型。
   /// @param dirtyRects 本次变化的物理像素区域。
@@ -117,6 +120,26 @@ class OsrRenderHandler final : public CefRenderHandler {
       const RectList& character_bounds) override;
 
  private:
+  /// 读取 D3D11 共享纹理（OpenSharedResource）并更新 BrowserFrame。
+  /// OnAcceleratedPaint 共享纹理路径专用；CEF 回调线程串行调用，D3D11
+  /// 对象仅在本方法及 Ensure/Open 辅助函数内访问。
+  /// @param type 主视图或弹出层类型。
+  /// @param dirtyRects 本次变化的物理像素区域（仅用于日志）。
+  /// @param shared_handle D3D11 Texture2D 共享句柄。
+  /// @param scale 设备像素缩放系数。
+  /// @return 读取并更新成功时为 true。
+  bool ReadSharedTexture(PaintElementType type, const RectList& dirtyRects,
+                         void* shared_handle, double scale);
+  /// 延迟创建与 GPU 进程默认适配器一致的 D3D11 设备与即时上下文。
+  /// @return 创建成功或已存在时为 true。
+  bool EnsureD3D11Device();
+  /// 用当前设备打开共享句柄；默认适配器失败时枚举全部适配器逐一重试
+  /// （多 GPU 场景适配器不匹配），成功后替换 d3d11_device_/d3d11_context_。
+  /// @param shared_handle D3D11 Texture2D 共享句柄。
+  /// @param out_texture 输出打开的共享纹理（调用方负责 Release）。
+  /// @return 打开成功时为 true。
+  bool OpenSharedTexture(void* shared_handle, ID3D11Texture2D** out_texture);
+
   mutable std::mutex mutex_;
   BrowserViewRect view_rect_;
   double device_scale_factor_ = 1.0;
@@ -126,6 +149,13 @@ class OsrRenderHandler final : public CefRenderHandler {
   ImeCompositionRangeChangedCallback ime_composition_range_changed_callback_;
   StartDraggingCallback start_dragging_callback_;
   UpdateDragCursorCallback update_drag_cursor_callback_;
+
+  // D3D11 共享纹理读取状态（GPU 路径）。仅 OnAcceleratedPaint 回调线程访问。
+  Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device_;
+  Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d11_context_;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> staging_texture_;
+  int staging_width_ = 0;
+  int staging_height_ = 0;
 
   IMPLEMENT_REFCOUNTING(OsrRenderHandler);
 };

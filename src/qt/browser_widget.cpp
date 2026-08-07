@@ -11,6 +11,7 @@
 #include "browser/browser_ime_handler.h"
 #include "browser/browser_input_mapping.h"
 #include "browser/browser_service.h"
+#include "browser/osr_render_log.h"
 #include "browser/render_stats_log.h"
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -198,6 +199,9 @@ void BrowserWidget::SetRenderStats(std::shared_ptr<RenderStats> stats) {
 
 void BrowserWidget::EmitRenderStats() {
   if (!render_stats_) return;
+  // 跨小时时切换 CSV 输出文件（热路径不做时间判断，集中在此秒级定时器）。
+  RotateOsrRenderLogIfHourChanged();
+  RotateRenderStatsLogIfHourChanged();
   const RenderStatsSnapshot snapshot = render_stats_->SnapshotAndResetWindow();
   if (snapshot.window_frames == 0 && snapshot.window_paint_events == 0) {
     return;

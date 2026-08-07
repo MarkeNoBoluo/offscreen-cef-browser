@@ -42,6 +42,8 @@ target_link_libraries(offscreen_cef_runtime
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
     imm32
+  PRIVATE
+    offscreen_core
 )
 target_compile_features(offscreen_cef_runtime PUBLIC cxx_std_17)
 target_compile_definitions(offscreen_cef_runtime PRIVATE
@@ -60,6 +62,9 @@ target_link_libraries(offscreen_cef_widgets
   PUBLIC
     offscreen_core
     offscreen_cef_runtime
+  PRIVATE
+    d3d11
+    dxgi
 )
 target_compile_features(offscreen_cef_widgets PUBLIC cxx_std_17)
 target_compile_definitions(offscreen_cef_widgets PRIVATE
@@ -118,6 +123,16 @@ function(offscreen_cef_deploy target)
       "$<TARGET_FILE_DIR:${target}>/offscreen_cef_subprocess.exe"
     VERBATIM
   )
+
+  if(OFFSCREEN_WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${OFFSCREEN_WINDEPLOYQT_EXECUTABLE}"
+              --no-compiler-runtime
+              --dir "$<TARGET_FILE_DIR:${target}>"
+              "$<TARGET_FILE:${target}>"
+      VERBATIM
+    )
+  endif()
 endfunction()
 
 offscreen_cef_deploy(offscreen_cef_browser)

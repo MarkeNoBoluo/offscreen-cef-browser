@@ -27,8 +27,12 @@ struct OsrRenderLogRecord {
 /// @param path 目标文件完整路径。
 void SetOsrRenderLogFile(const std::wstring& path);
 
-/// 在可执行文件目录创建或追加 offscreen_osr_render.csv。
+/// 在可执行文件目录创建或追加按小时切分的 offscreen_osr_render_YYYYMMDD_HH.csv。
 void SetOsrRenderLogFileToApplicationDirectory();
+
+/// 检查是否跨小时：跨小时时自动关闭旧文件并创建新小时文件（含 BOM + 表头）。
+/// 由秒级定时器调用，避免热路径写入时做时间判断。
+void RotateOsrRenderLogIfHourChanged();
 
 /// 追加一条 OSR 渲染事件记录（互斥锁 + 常开句柄，追加一行 CSV）。
 /// @param record 待写入的宽表记录。

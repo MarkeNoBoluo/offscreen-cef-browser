@@ -63,13 +63,18 @@ offscreen::RenderStatsSnapshot MakeSnapshot() {
 void test_format_header() {
   const std::string header = offscreen::FormatRenderStatsCsvHeader();
   expect_eq(header,
-            "timestamp,elapsed_ms,cef_paint_fps,qt_paint_fps,window_frames,"
-            "window_paint_events,accelerated_frames,dropped_frames,"
+            "timestamp,run_id,elapsed_ms,cef_paint_fps,qt_paint_fps,"
+            "window_frames,window_paint_events,accelerated_frames,"
+            "dropped_frames,coalesced_frames,extra_qt_paints,drop_reason,"
             "onpaint_avg_ms,set_view_image_avg_ms,schedule_delay_avg_ms,"
             "snapshot_avg_ms,draw_image_avg_ms,"
             "frame_interval_avg_ms,dirty_area_avg_px,dirty_count_avg,"
-            "buffer_width,buffer_height,buffer_bytes,cpu_percent,working_set_mb,"
-            "gpu_requested,gpu_backend,cef_subprocess_count",
+            "buffer_width,buffer_height,buffer_bytes,"
+            "host_cpu,host_working_set_mb,renderer_cpu_total,gpu_process_cpu,"
+            "process_tree_cpu,process_tree_working_set_mb,"
+            "gpu_requested,gpu_backend,gpu_actual_backend,"
+            "gpu_init_error_count,gpu_process_restarted_count,"
+            "cef_subprocess_count",
             "csv header");
 }
 
@@ -85,9 +90,9 @@ void test_format_row() {
   // elapsed_ms = window_seconds*1000 = 1000；cef_fps=30、qt_fps=28、frames/pe。
   expect_true(row.find("1000,30,28,30,28,") != std::string::npos,
               "row elapsed/fps/frames");
-  // 加速帧=5、掉帧=2。
-  expect_true(row.find("30,28,5,2,") != std::string::npos,
-              "row accelerated/dropped");
+  // 加速帧=5、掉帧=2、合帧=0、额外 Qt 重绘=0、掉帧原因=none。
+  expect_true(row.find("30,28,5,2,0,0,none,") != std::string::npos,
+              "row accelerated/dropped/coalesced/drop reason");
   // 阶段均值：2,3,0.5,2,0.1。
   expect_true(row.find("2,3,0.5,2,0.1,") != std::string::npos,
               "row stage averages");
@@ -112,10 +117,13 @@ void test_format_row_with_explicit_gpu_info() {
   offscreen::GpuBackendInfo gpu;
   gpu.gpu_requested = false;
   gpu.backend = "angle/d3d11";
+  gpu.actual_backend = "software";
+  gpu.gpu_init_error_count = 2;
+  gpu.gpu_process_restarted_count = 1;
   gpu.subprocess_count = 7;
   const std::string row =
       offscreen::FormatRenderStatsCsvRow(s, 0.0, 0, gpu);
-  expect_true(row.find(",0,angle/d3d11,7\n") != std::string::npos,
+  expect_true(row.find(",0,angle/d3d11,software,2,1,7\n") != std::string::npos,
               "row explicit gpu info");
 }
 
@@ -210,6 +218,26 @@ void test_gpu_backend_info() {
   expect_eq(info.backend, std::string("default"), "default backend");
   // 子进程计数 >= 0（本进程不算；测试进程名下不应有额外子进程）。
   expect_true(info.subprocess_count >= 0, "subprocess count non-negative");
+  // 新字段：实际后端非空、错误计数与重启计数非负。
+  expect_true(!info.actual_backend.empty(), "actual backend non-empty");
+  expect_true(info.gpu_init_error_count >= 0, "gpu init error count non-negative");
+  expect_true(info.gpu_process_restarted_count >= 0,
+              "gpu process restart count non-negative");
+}
+
+// --- 进程树指标采样：首次建立基线，之后可产出非负值 ---
+
+void test_process_tree_metrics() {
+  const offscreen::ProcessTreeMetrics first =
+      offscreen::SampleProcessTreeMetrics();
+  expect_true(first.host_cpu >= 0.0, "host cpu non-negative");
+  expect_true(first.process_tree_working_set_mb > 0.0,
+              "tree working set positive");
+  // 二次采样（同一秒内）不应为负。
+  const offscreen::ProcessTreeMetrics second =
+      offscreen::SampleProcessTreeMetrics();
+  expect_true(second.host_cpu >= 0.0, "second host cpu non-negative");
+  expect_true(second.process_tree_cpu >= 0.0, "tree cpu non-negative");
 }
 
 }  // namespace
@@ -222,5 +250,6 @@ int main() {
   test_write_to_disk();
   test_cpu_sample_regression();
   test_gpu_backend_info();
+  test_process_tree_metrics();
   return 0;
 }

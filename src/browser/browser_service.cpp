@@ -149,6 +149,12 @@ bool BrowserService::CreateBrowser(HWND parent_handle,
 
   CefWindowInfo window_info;
   window_info.SetAsWindowless(parent_handle);
+  // 开启 D3D11 共享纹理路径：CEF 才会调用
+  // CefRenderHandler::OnAcceleratedPaint（见 include/cef_render_handler.h，
+  // "only called when CefWindowInfo::shared_texture_enabled is set to true"）。
+  // 开启后主视图帧不再走 OnPaint（CPU buffer），改由 OnAcceleratedPaint
+  // 提供共享句柄；OsrRenderHandler 负责 OpenSharedResource 读回像素。
+  window_info.shared_texture_enabled = TRUE;
 
   CefBrowserSettings browser_settings;
   browser_settings.windowless_frame_rate = 30;

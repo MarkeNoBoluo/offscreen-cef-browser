@@ -60,6 +60,11 @@ struct RenderStatsSnapshot {
   uint64_t window_accelerated_frames = 0;  // 窗口内 OnAcceleratedPaint 帧数
   uint64_t total_accelerated_frames = 0;   // 生命周期累计加速帧
   uint64_t window_dropped_frames = 0;  // 窗口内掉帧数（帧间隔 > 阈值）
+  uint64_t window_coalesced_frames = 0;  // 窗口内合帧数（多次 OnPaint 合并为一次 Qt 重绘）
+  uint64_t window_extra_qt_paints = 0;   // 窗口内无新帧的 Qt 额外重绘次数
+  uint64_t drop_reason_onpaint_slow = 0; // 掉帧主因：本帧 OnPaint 处理耗时过长
+  uint64_t drop_reason_backlog = 0;      // 掉帧主因：帧积压（上一帧尚未被 Qt 消费）
+  uint64_t drop_reason_interval = 0;     // 掉帧主因：帧间隔自然拉长（后台/暂停等）
   double window_seconds = 0;  // steady_clock 实算，非定时器 tick
   double fps = 0;             // CEF OnPaint 帧率（cef_paint_fps）
   double qt_fps = 0;          // Qt paintEvent 帧率（qt_paint_fps/display_fps）
@@ -89,6 +94,9 @@ class RenderStats {
   static constexpr std::size_t kDefaultRingCapacity = 120;
   /// 帧间隔超过该阈值（毫秒）计为一次掉帧；用于量化渲染停顿。
   static constexpr double kDroppedFrameThresholdMs = 100.0;
+
+  /// 该阈值（毫秒）以上的本帧 OnPaint 处理耗时视为掉帧主因 onpaint_slow。
+  static constexpr double kSlowOnPaintThresholdMs = 50.0;
 
   /// 创建统计核心。
   /// @param ring_capacity 最近帧环形缓冲容量；至少为 1。
@@ -203,6 +211,11 @@ class RenderStats {
   uint64_t window_accelerated_frames_ = 0;
   uint64_t total_accelerated_frames_ = 0;
   uint64_t window_dropped_frames_ = 0;
+  uint64_t window_coalesced_frames_ = 0;
+  uint64_t window_extra_qt_paints_ = 0;
+  uint64_t drop_reason_onpaint_slow_ = 0;
+  uint64_t drop_reason_backlog_ = 0;
+  uint64_t drop_reason_interval_ = 0;
   double window_begin_ms_ = 0;
   double last_onpaint_end_ms_ = 0;
   RenderStageStats frame_interval_agg_;

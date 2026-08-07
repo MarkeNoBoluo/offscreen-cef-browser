@@ -183,6 +183,33 @@ void test_accelerated_frames() {
             0.0, "accelerated sample setview stage zero");
 }
 
+// --- 合帧与额外 Qt 重绘计数 ---
+
+void test_coalesced_and_extra_qt_paints() {
+  offscreen::RenderStats stats;
+  // 两帧 OnPaint 之间没有 paintEvent 消费 dispatch → 第二帧为合帧。
+  PushFrame(stats, 100, 50, 1, 100, false);
+  PushFrame(stats, 100, 50, 1, 100, false);
+  // 无待消费新帧的 paintEvent → 额外 Qt 重绘。
+  stats.OnPaintEventBegin();
+  stats.OnPaintEventEnd();
+  stats.OnPaintEventBegin();
+  stats.OnPaintEventEnd();
+
+  const offscreen::RenderStatsSnapshot snap = stats.Snapshot();
+  expect_eq(snap.window_frames, static_cast<uint64_t>(2), "two frames");
+  expect_eq(snap.window_coalesced_frames, static_cast<uint64_t>(1),
+            "one coalesced frame");
+  // 第 1 次 paintEvent 消费了第 2 帧的 pending dispatch；第 2 次才是额外重绘。
+  expect_eq(snap.window_extra_qt_paints, static_cast<uint64_t>(1),
+            "one extra qt paint");
+  // 掉帧原因默认 none（快照无掉帧）。
+  expect_eq(snap.drop_reason_onpaint_slow, static_cast<uint64_t>(0),
+            "no onpaint-slow drop");
+  expect_eq(snap.drop_reason_interval, static_cast<uint64_t>(0),
+            "no interval drop");
+}
+
 // --- 掉帧计数：帧间隔超过阈值 ---
 
 void test_dropped_frames() {
@@ -377,6 +404,7 @@ int main() {
   test_frame_interval_and_fps();
   test_qt_fps_independent();
   test_accelerated_frames();
+  test_coalesced_and_extra_qt_paints();
   test_dropped_frames();
   test_stage_aggregation();
   test_ring_eviction();

@@ -125,6 +125,39 @@
     transform: rotate(12deg) scale(0.9);
     animation: pulse 900ms infinite alternate ease-in-out;
   }
+  video {
+    display: block;
+    max-width: 100%;
+    background: #000;
+    border: 1px solid var(--line);
+  }
+  .scroll-box {
+    overflow: scroll;
+    height: 160px;
+    max-width: 420px;
+    border: 2px solid #999;
+    background: #ffffff;
+    padding: 8px;
+  }
+  .scroll-box p {
+    margin: 10px 0;
+  }
+  .cursor-hand {
+    cursor: pointer;
+    color: #1a5cd7;
+    text-decoration: underline;
+  }
+  .hover-area {
+    display: inline-block;
+    padding: 6px 12px;
+    background: #eee;
+  }
+  .anchor-target {
+    background: #ffffcc;
+    padding: 10px;
+    border: 1px dashed #b9a34a;
+    margin-top: 10px;
+  }
   @keyframes pulse {
     from { opacity: 0.55; }
     to { opacity: 1; }
@@ -167,17 +200,105 @@
     <button id="ws-button" type="button">连接</button>
     <div id="ws-detail" class="detail">需要可用的 echo WebSocket 服务。</div>
   </section>
+
+  <section>
+    <h2>视频播放测试</h2>
+    <video id="video" width="480" height="270" muted autoplay playsinline loop preload="auto"
+           poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+      <source src="test_video.mp4" type="video/mp4">
+      当前浏览器不支持 video 标签。
+    </video>
+    <div class="flex-proof" style="margin-top:8px;">
+      <button id="video-play" type="button">播放（带声音）</button>
+      <button id="video-pause" type="button">暂停</button>
+      <span class="detail" id="video-state"></span>
+    </div>
+    <div id="video-detail" class="detail">等待测试结果：自动加载本地 test_video.mp4（H.264/AAC）。</div>
+  </section>
+
+  <section>
+    <h2>输入事件转发测试</h2>
+    <div class="grid">
+      <div class="item">
+        <span class="name">1. 链接点击</span>
+        <a id="link-test" href="#input-anchor">点击此链接跳转到锚点区</a>
+        <div class="detail">预期：页面滚动到下方黄色锚点区。</div>
+      </div>
+      <div class="item">
+        <span class="name">2. 文本输入</span>
+        <input id="text-input" type="text" placeholder="ASCII + 中文" style="width:200px;" autofocus>
+        <div class="detail">预期：输入英文和中文都出现在输入框。</div>
+      </div>
+      <div class="item">
+        <span class="name">3. 滚动</span>
+        <div id="scroll-box" class="scroll-box">
+          <p>Item 1 - 用鼠标滚轮滚动</p><p>Item 2</p><p>Item 3</p>
+          <p>Item 4</p><p>Item 5</p><p>Item 6</p><p>Item 7</p><p>Item 8</p>
+          <p>Item 9</p><p>Item 10</p><p>Item 11</p><p>Item 12</p>
+          <p>Item 13</p><p>Item 14</p><p>Item 15 - 滚动内容结尾</p>
+        </div>
+        <div class="detail">预期：滚轮上下滚动内容。</div>
+      </div>
+      <div class="item">
+        <span class="name">4. 悬停光标</span>
+        <p><span class="cursor-hand">Hover me (手型)</span></p>
+        <p><input type="text" value="Hover me (I-beam)" size="18"></p>
+        <p><span>Hover me (箭头)</span></p>
+        <div class="detail">预期：光标按元素类型变化。</div>
+      </div>
+      <div class="item">
+        <span class="name">5. 鼠标离开</span>
+        <p><span id="hover-area" class="hover-area" tabindex="0">悬停变红，移出恢复</span></p>
+        <div class="detail">预期：悬停状态在鼠标离开后清除。</div>
+      </div>
+      <div class="item">
+        <span class="name">6. Tab 导航</span>
+        <div id="tab-nav">
+          <a href="#input-anchor">First link</a><br>
+          <input type="text" placeholder="Tab target 1" style="margin:4px 0;"><br>
+          <button type="button">A Button</button><br>
+          <input type="text" placeholder="Tab target 2" style="margin:4px 0;"><br>
+          <a href="#input-anchor">Second link</a>
+        </div>
+        <div class="detail">预期：Tab / Shift+Tab 在元素间移动焦点。</div>
+      </div>
+      <div class="item">
+        <span class="name">7. 下拉弹窗</span>
+        <select id="select-test">
+          <option>Option A</option>
+          <option>Option B</option>
+          <option>Option C</option>
+        </select>
+        <div class="detail">预期：点击展开下拉弹窗（验证 popup 合成）。</div>
+      </div>
+    </div>
+    <div id="input-detail" class="detail">等待交互操作。</div>
+    <div id="input-anchor" class="anchor-target">8. 链接目标锚点区：如果第 1 项链接点击生效，页面应滚动到这里。</div>
+  </section>
 </main>
 
 <script>
 (() => {
   const results = document.getElementById('auto-results');
+  let passCount = 0;
+  let failCount = 0;
+  let manualCount = 0;
+  let videoState = 'wait';
+  let inputState = '';
+
+  function updateTitle() {
+    document.title = 'Test auto:' + passCount + 'P/' + failCount + 'F/' +
+                     manualCount + 'M video:' + videoState + inputState;
+  }
 
   function addResult(name, state, detail) {
     const item = document.createElement('div');
     item.className = 'item';
     const stateClass = state === 'pass' ? 'pass' : state === 'fail' ? 'fail' : 'manual';
     const label = state === 'pass' ? 'PASS' : state === 'fail' ? 'FAIL' : 'MANUAL';
+    if (state === 'pass') passCount += 1;
+    else if (state === 'fail') failCount += 1;
+    else manualCount += 1;
     item.innerHTML =
       '<span class="name"></span>' +
       '<span class="status ' + stateClass + '">' + label + '</span>' +
@@ -185,6 +306,7 @@
     item.querySelector('.name').textContent = name;
     item.querySelector('.detail').textContent = detail;
     results.appendChild(item);
+    updateTitle();
   }
 
   async function checkLocalStorage() {
@@ -251,6 +373,23 @@
     return mp4 === 'probably' || mp4 === 'maybe';
   }
 
+  function checkVideoPlayback() {
+    return new Promise((resolve) => {
+      const video = document.getElementById('video');
+      const deadline = setTimeout(() => resolve(false), 4000);
+      const onProgress = () => {
+        if (video.currentTime > 0 || !video.paused) {
+          clearTimeout(deadline);
+          video.removeEventListener('playing', onProgress);
+          video.removeEventListener('timeupdate', onProgress);
+          resolve(true);
+        }
+      };
+      video.addEventListener('playing', onProgress);
+      video.addEventListener('timeupdate', onProgress);
+    });
+  }
+
   async function runAutomaticChecks() {
     addResult('JavaScript / ES6', 'pass', 'module scope, const/let, Promise and async function executed.');
     addResult('Flex / CSS Transform / Animation', 'pass', 'The layout and animated blue block are rendered by CSS.');
@@ -266,6 +405,8 @@
               'Required by maps, 3D charts or GPU canvas components.');
     addResult('H.264/AAC MP4 codec probe', checkVideoCodec() ? 'pass' : 'manual',
               'Probe only; real business video playback must be verified separately.');
+    addResult('Video playback (muted autoplay)', await checkVideoPlayback() ? 'pass' : 'manual',
+              'Play local MP4 below; if autoplay is blocked use the Play button.');
     addResult('Cookie / Login State', 'manual',
               'Use a real HTTP/HTTPS origin and stable cache_path; file:// is not enough.');
     addResult('WebSocket', 'manual',
@@ -329,12 +470,18 @@
   }
 
   function wireManualChecks() {
+    function markInput(tag) {
+      inputState = ' input:' + tag;
+      updateTitle();
+    }
     document.getElementById('pointer-button').addEventListener('pointerdown', (event) => {
+      markInput('pointer');
       document.getElementById('visual-detail').textContent =
         'PointerEvent 收到：pointerType=' + event.pointerType + ', button=' + event.button;
     });
 
     document.getElementById('copy-button').addEventListener('click', async () => {
+      markInput('copy');
       const text = 'offscreen-cef-clipboard-ok';
       try {
         await navigator.clipboard.writeText(text);
@@ -349,6 +496,7 @@
     });
 
     document.getElementById('read-button').addEventListener('click', async () => {
+      markInput('paste');
       try {
         const text = await navigator.clipboard.readText();
         document.getElementById('manual-detail').textContent =
@@ -362,6 +510,7 @@
     });
 
     document.getElementById('file-input').addEventListener('change', (event) => {
+      markInput('file');
       const file = event.target.files[0];
       document.getElementById('manual-detail').textContent =
         file ? 'File API 选择文件：' + file.name + ' (' + file.size + ' bytes)' : '未选择文件。';
@@ -378,12 +527,14 @@
     dropZone.addEventListener('drop', (event) => {
       event.preventDefault();
       dropZone.classList.remove('dragover');
+      markInput('drop');
       const count = event.dataTransfer.files.length;
       document.getElementById('manual-detail').textContent =
         'Drag & Drop 收到文件数量：' + count;
     });
 
     document.getElementById('ws-button').addEventListener('click', () => {
+      markInput('ws');
       const detail = document.getElementById('ws-detail');
       const url = document.getElementById('ws-url').value.trim();
       try {
@@ -414,11 +565,127 @@
     });
   }
 
+  function runVideoCheck() {
+    const video = document.getElementById('video');
+    const detail = document.getElementById('video-detail');
+    const state = document.getElementById('video-state');
+    const timer = setTimeout(() => {
+      detail.textContent = '视频播放测试：加载或播放超时（4 秒内未进入播放状态）。';
+    }, 4000);
+
+    video.addEventListener('loadedmetadata', () => {
+      state.textContent = '[' + video.videoWidth + 'x' + video.videoHeight + ']';
+      detail.textContent = '视频元数据已加载，尝试播放 test_video.mp4...';
+    });
+    video.addEventListener('playing', () => {
+      clearTimeout(timer);
+      videoState = 'PLAYING';
+      updateTitle();
+      detail.textContent = '视频正在播放：currentTime=' + video.currentTime.toFixed(2) +
+                           's / duration=' + video.duration.toFixed(2) +
+                           's，解码与合成渲染链路正常。';
+    });
+    video.addEventListener('timeupdate', () => {
+      state.textContent = '[' + video.videoWidth + 'x' + video.videoHeight +
+                          ' t=' + video.currentTime.toFixed(2) + 's' +
+                          (video.muted ? ' muted' : '') + ']';
+    });
+    video.addEventListener('ended', () => {
+      clearTimeout(timer);
+      videoState = 'ENDED';
+      updateTitle();
+      detail.textContent = '视频播放完成（ended），本地 MP4 全链路播放正常。';
+    });
+    video.addEventListener('error', () => {
+      clearTimeout(timer);
+      const code = video.error ? video.error.code : 'unknown';
+      videoState = 'ERROR' + code;
+      updateTitle();
+      detail.textContent = '视频播放失败：error.code=' + code +
+                           '（检查 test_video.mp4 是否与页面同目录）。';
+    });
+    video.addEventListener('play', () => {
+      detail.textContent = '播放事件已触发，等待画面推进...';
+    });
+
+    document.getElementById('video-play').addEventListener('click', () => {
+      video.muted = false;
+      video.play().catch((error) => {
+        detail.textContent = '带声音播放被拒绝：' + error;
+      });
+    });
+    document.getElementById('video-pause').addEventListener('click', () => {
+      video.pause();
+      detail.textContent = '视频已暂停（用户操作）。';
+    });
+  }
+
+  function wireInputChecks() {
+    const inputDetail = document.getElementById('input-detail');
+
+    function markInput(tag) {
+      inputState = ' input:' + tag;
+      updateTitle();
+    }
+
+    document.getElementById('link-test').addEventListener('click', () => {
+      markInput('link');
+      inputDetail.textContent = '链接点击已触发（href=#input-anchor），页面应滚动到锚点区。';
+    });
+
+    document.getElementById('text-input').addEventListener('input', (event) => {
+      markInput('text');
+      inputDetail.textContent = '文本输入事件：值="' + event.target.value +
+                                '"（验证 ASCII 与中文输入）。';
+    });
+
+    const scrollBox = document.getElementById('scroll-box');
+    scrollBox.addEventListener('scroll', () => {
+      markInput('scroll');
+      inputDetail.textContent = '滚动事件：scrollTop=' + scrollBox.scrollTop +
+                                '，scrollLeft=' + scrollBox.scrollLeft;
+    });
+
+    const hoverArea = document.getElementById('hover-area');
+    hoverArea.addEventListener('mouseover', () => {
+      markInput('hover');
+      hoverArea.style.background = '#fdd';
+      inputDetail.textContent = '鼠标悬停：hover 区域背景变为红色。';
+    });
+    hoverArea.addEventListener('mouseout', () => {
+      markInput('hoverout');
+      hoverArea.style.background = '#eee';
+      inputDetail.textContent = '鼠标离开：hover 状态已清除，背景恢复灰色。';
+    });
+
+    document.querySelectorAll('#tab-nav a, #tab-nav input, #tab-nav button')
+      .forEach((el) => {
+        el.addEventListener('focus', () => {
+          markInput('tabfocus');
+          const label = el.placeholder || el.textContent || el.tagName;
+          inputDetail.textContent = 'Tab 焦点已移动到：' + el.tagName + ' "' +
+                                    label.trim() + '"';
+        });
+      });
+
+    const select = document.getElementById('select-test');
+    select.addEventListener('focus', () => {
+      markInput('selectfocus');
+      inputDetail.textContent = '下拉框已聚焦，点击展开验证 popup 合成。';
+    });
+    select.addEventListener('change', (event) => {
+      markInput('select');
+      inputDetail.textContent = '下拉选择变化：' + event.target.value;
+    });
+  }
+
   runAutomaticChecks().catch((error) => {
     addResult('Automatic checks', 'fail', String(error));
   });
   runCanvasCheck();
   wireManualChecks();
+  runVideoCheck();
+  wireInputChecks();
 })();
 </script>
 </body>

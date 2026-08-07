@@ -57,6 +57,16 @@ add_library(offscreen_core STATIC
   src/browser/render_stats.h
   src/browser/render_stats_log.cpp
   src/browser/render_stats_log.h
+  src/browser/run_lifecycle.cpp
+  src/browser/run_lifecycle.h
+  src/utils_log/FileLog.cpp
+  src/utils_log/FileLog.h
+  src/utils_log/Logger.cpp
+  src/utils_log/Logger.h
+  src/utils_log/LogStream.cpp
+  src/utils_log/LogStream.h
+  src/utils_log/TTime.h
+  src/utils_log/NoCopyable.h
 )
 target_include_directories(offscreen_core PUBLIC src)
 target_compile_features(offscreen_core PUBLIC cxx_std_17)

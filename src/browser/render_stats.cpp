@@ -65,6 +65,11 @@ void RenderStats::ResetWindowLocked(double now_ms) {
   window_paint_events_ = 0;
   window_accelerated_frames_ = 0;
   window_dropped_frames_ = 0;
+  window_coalesced_frames_ = 0;
+  window_extra_qt_paints_ = 0;
+  drop_reason_onpaint_slow_ = 0;
+  drop_reason_backlog_ = 0;
+  drop_reason_interval_ = 0;
   window_begin_ms_ = now_ms;
   last_onpaint_end_ms_ = 0;
   frame_interval_agg_ = {};
@@ -158,10 +163,23 @@ void RenderStats::OnPaintEnd() {
                   frame_is_accelerated_ ? 0.0 : setview_ms_);
   if (last_onpaint_end_ms_ != 0) {
     RecordStageStat(frame_interval_agg_, interval_ms);
-    // 帧间隔超过阈值视为一次渲染停顿（掉帧）。
+    // 帧间隔超过阈值视为一次渲染停顿（掉帧），并归类主因：
+    // 本帧 OnPaint 处理慢 > 上一帧积压未消费 > 帧间隔自然拉长。
     if (interval_ms > RenderStats::kDroppedFrameThresholdMs) {
       ++window_dropped_frames_;
+      if (onpaint_ms > RenderStats::kSlowOnPaintThresholdMs) {
+        ++drop_reason_onpaint_slow_;
+      } else if (dispatch_pending_) {
+        ++drop_reason_backlog_;
+      } else {
+        ++drop_reason_interval_;
+      }
     }
+  }
+  // 合帧检测：上一帧的 dispatch 尚未被 Qt paintEvent 消费（dispatch_pending_
+  // 仍为 true）说明两次 OnPaint 之间没有重绘，本帧与上一帧合并渲染。
+  if (dispatch_pending_) {
+    ++window_coalesced_frames_;
   }
 
   ++total_frames_;
@@ -214,6 +232,8 @@ void RenderStats::OnPaintEventBegin() {
     RecordStageStat(stage_aggs_[static_cast<int>(RenderStage::kScheduleDelay)],
                     paint_schedule_ms_);
   } else {
+    // 没有待消费的新帧却发生了 Qt 重绘：resize/暴露/系统触发等额外绘制。
+    ++window_extra_qt_paints_;
     paint_schedule_ms_ = -1.0;
   }
 }
@@ -299,6 +319,11 @@ RenderStatsSnapshot RenderStats::SnapshotLocked() const {
   snapshot.window_accelerated_frames = window_accelerated_frames_;
   snapshot.total_accelerated_frames = total_accelerated_frames_;
   snapshot.window_dropped_frames = window_dropped_frames_;
+  snapshot.window_coalesced_frames = window_coalesced_frames_;
+  snapshot.window_extra_qt_paints = window_extra_qt_paints_;
+  snapshot.drop_reason_onpaint_slow = drop_reason_onpaint_slow_;
+  snapshot.drop_reason_backlog = drop_reason_backlog_;
+  snapshot.drop_reason_interval = drop_reason_interval_;
   if (window_frames_ > 0 || window_paint_events_ > 0) {
     snapshot.window_seconds =
         std::max(0.0, (SteadyNowMsDouble() - window_begin_ms_) / 1000.0);

@@ -1,7 +1,11 @@
 #include "browser/osr_render_handler.h"
 
 #include <algorithm>
+#include <cstring>
 #include <sstream>
+#include <vector>
+
+#include <dxgi.h>
 
 #include "app/diagnostic_log.h"
 #include "browser/osr_render_log.h"
@@ -256,15 +260,26 @@ void OsrRenderHandler::OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
   record.dirty_area_px = dirty_area_px;
   {
     std::ostringstream detail;
-    detail << "shared_handle=" << HexValue(
-        reinterpret_cast<uintptr_t>(shared_handle));
+    detail << "shared_handle="
+           << HexValue(reinterpret_cast<uintptr_t>(shared_handle));
     record.detail = detail.str();
   }
   OsrRenderLogWrite(record);
 
-  // 共享纹理路径下帧内容位于 GPU 侧；本采集点只统计与日志，不更新
-  // BrowserFrame（CPU buffer）。Qt 侧如需显示需实现 D3D11 纹理读取
-  // （OpenSharedResource），属于 GPU upload 原型，另行评估。
+  // 读取共享纹理（OpenSharedResource → staging → Map）并复用
+  // SetViewImage/SetPopupImage 更新 BrowserFrame，使 Qt 侧照常显示。
+  const bool read_ok = ReadSharedTexture(type, dirtyRects, shared_handle, scale);
+  if (read_ok) {
+    record.detail = "shared_handle=" +
+                    HexValue(reinterpret_cast<uintptr_t>(shared_handle)) +
+                    " read=ok";
+  } else {
+    record.detail = "shared_handle=" +
+                    HexValue(reinterpret_cast<uintptr_t>(shared_handle)) +
+                    " read=fail";
+  }
+  OsrRenderLogWrite(record);
+
   std::vector<BrowserViewRect> dip_rects;
   for (const auto& r : dirtyRects) {
     BrowserPhysicalRect phys{r.x, r.y, r.width, r.height};
@@ -329,6 +344,196 @@ void OsrRenderHandler::OnImeCompositionRangeChanged(
   if (ime_composition_range_changed_callback_) {
     ime_composition_range_changed_callback_(selected_range, character_bounds);
   }
+}
+
+bool OsrRenderHandler::EnsureD3D11Device() {
+  if (d3d11_device_) {
+    return true;
+  }
+  const D3D_FEATURE_LEVEL feature_levels[] = {
+      D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
+      D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
+  Microsoft::WRL::ComPtr<ID3D11Device> device;
+  Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+  const HRESULT hr = D3D11CreateDevice(
+      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+      D3D11_CREATE_DEVICE_BGRA_SUPPORT, feature_levels,
+      static_cast<UINT>(sizeof(feature_levels) / sizeof(feature_levels[0])),
+      D3D11_SDK_VERSION, device.GetAddressOf(), nullptr,
+      context.GetAddressOf());
+  if (FAILED(hr)) {
+    std::ostringstream stream;
+    stream << "OsrRenderHandler::EnsureD3D11Device D3D11CreateDevice failed hr=0x"
+           << std::hex << static_cast<uint32_t>(hr);
+    DiagnosticLog(stream.str());
+    return false;
+  }
+  d3d11_device_ = std::move(device);
+  d3d11_context_ = std::move(context);
+  DiagnosticLog("OsrRenderHandler::EnsureD3D11Device created hardware device");
+  return true;
+}
+
+bool OsrRenderHandler::OpenSharedTexture(void* shared_handle,
+                                         ID3D11Texture2D** out_texture) {
+  if (!out_texture) {
+    return false;
+  }
+  *out_texture = nullptr;
+  if (!d3d11_device_) {
+    return false;
+  }
+  if (SUCCEEDED(d3d11_device_->OpenSharedResource(
+          shared_handle, __uuidof(ID3D11Texture2D),
+          reinterpret_cast<void**>(out_texture)))) {
+    return true;
+  }
+
+  // 默认适配器无法打开共享句柄（多 GPU 适配器不匹配），枚举全部适配器重试。
+  DiagnosticLog("OsrRenderHandler::OpenSharedTexture default adapter failed; "
+                "enumerating adapters");
+  Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+  HRESULT hr = CreateDXGIFactory1(
+      __uuidof(IDXGIFactory1), reinterpret_cast<void**>(factory.GetAddressOf()));
+  if (FAILED(hr)) {
+    return false;
+  }
+  const D3D_FEATURE_LEVEL feature_levels[] = {
+      D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
+      D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0};
+  for (UINT index = 0;; ++index) {
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+    if (factory->EnumAdapters1(index, adapter.GetAddressOf()) ==
+        DXGI_ERROR_NOT_FOUND) {
+      break;
+    }
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+    if (FAILED(D3D11CreateDevice(
+            adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT, feature_levels,
+            static_cast<UINT>(sizeof(feature_levels) / sizeof(feature_levels[0])),
+            D3D11_SDK_VERSION, device.GetAddressOf(), nullptr,
+            context.GetAddressOf()))) {
+      continue;
+    }
+    if (SUCCEEDED(device->OpenSharedResource(
+            shared_handle, __uuidof(ID3D11Texture2D),
+            reinterpret_cast<void**>(out_texture)))) {
+      d3d11_device_ = std::move(device);
+      d3d11_context_ = std::move(context);
+      std::ostringstream stream;
+      stream << "OsrRenderHandler::OpenSharedTexture matched adapter index="
+             << index;
+      DiagnosticLog(stream.str());
+      return true;
+    }
+  }
+  return false;
+}
+
+bool OsrRenderHandler::ReadSharedTexture(PaintElementType type,
+                                         const RectList& dirtyRects,
+                                         void* shared_handle,
+                                         double scale) {
+  (void)dirtyRects;
+  if (!shared_handle || !frame_) {
+    DiagnosticLog("OsrRenderHandler::ReadSharedTexture invalid input");
+    return false;
+  }
+  if (!EnsureD3D11Device()) {
+    return false;
+  }
+
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> shared_texture;
+  if (!OpenSharedTexture(shared_handle, shared_texture.GetAddressOf())) {
+    std::ostringstream stream;
+    stream << "OsrRenderHandler::ReadSharedTexture OpenSharedResource failed "
+           << "shared_handle="
+           << HexValue(reinterpret_cast<uintptr_t>(shared_handle));
+    DiagnosticLog(stream.str());
+    return false;
+  }
+
+  D3D11_TEXTURE2D_DESC desc = {};
+  shared_texture->GetDesc(&desc);
+  const int width = static_cast<int>(desc.Width);
+  const int height = static_cast<int>(desc.Height);
+  if (width <= 0 || height <= 0) {
+    DiagnosticLog("OsrRenderHandler::ReadSharedTexture invalid texture desc");
+    return false;
+  }
+  if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+    std::ostringstream stream;
+    stream << "OsrRenderHandler::ReadSharedTexture unexpected format="
+           << static_cast<int>(desc.Format);
+    DiagnosticLog(stream.str());
+    return false;
+  }
+
+  // 按尺寸缓存 staging 纹理（CPU 可读），尺寸变化时重建。
+  if (!staging_texture_ || staging_width_ != width ||
+      staging_height_ != height) {
+    D3D11_TEXTURE2D_DESC staging_desc = {};
+    staging_desc.Width = desc.Width;
+    staging_desc.Height = desc.Height;
+    staging_desc.MipLevels = 1;
+    staging_desc.ArraySize = 1;
+    staging_desc.Format = desc.Format;
+    staging_desc.SampleDesc.Count = 1;
+    staging_desc.Usage = D3D11_USAGE_STAGING;
+    staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    staging_texture_.Reset();
+    const HRESULT hr = d3d11_device_->CreateTexture2D(
+        &staging_desc, nullptr, staging_texture_.GetAddressOf());
+    if (FAILED(hr)) {
+      std::ostringstream stream;
+      stream << "OsrRenderHandler::ReadSharedTexture CreateTexture2D staging "
+             << "failed hr=0x" << std::hex << static_cast<uint32_t>(hr);
+      DiagnosticLog(stream.str());
+      return false;
+    }
+    staging_width_ = width;
+    staging_height_ = height;
+  }
+
+  d3d11_context_->CopyResource(staging_texture_.Get(), shared_texture.Get());
+
+  D3D11_MAPPED_SUBRESOURCE mapped = {};
+  const HRESULT map_hr = d3d11_context_->Map(
+      staging_texture_.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+  if (FAILED(map_hr)) {
+    std::ostringstream stream;
+    stream << "OsrRenderHandler::ReadSharedTexture Map failed hr=0x"
+           << std::hex << static_cast<uint32_t>(map_hr);
+    DiagnosticLog(stream.str());
+    return false;
+  }
+
+  // staging 行距（RowPitch）可能大于 width*4，逐行拷贝为紧凑 BGRA buffer。
+  const size_t row_bytes = static_cast<size_t>(width) * 4;
+  std::vector<uint8_t> buffer(static_cast<size_t>(height) * row_bytes);
+  const auto* src = static_cast<const uint8_t*>(mapped.pData);
+  for (int y = 0; y < height; ++y) {
+    std::memcpy(buffer.data() + static_cast<size_t>(y) * row_bytes,
+                src + static_cast<size_t>(y) * mapped.RowPitch, row_bytes);
+  }
+  d3d11_context_->Unmap(staging_texture_.Get(), 0);
+
+  if (render_stats_) {
+    render_stats_->OnSetViewImageBegin();
+  }
+  if (type == PET_VIEW) {
+    frame_->SetViewImage(buffer.data(), width, height, scale);
+  } else if (type == PET_POPUP) {
+    frame_->SetPopupImage(buffer.data(), width, height, scale);
+  } else {
+    return false;
+  }
+  if (render_stats_) {
+    render_stats_->OnSetViewImageDone();
+  }
+  return true;
 }
 
 }  // namespace offscreen
