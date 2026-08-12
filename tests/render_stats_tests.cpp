@@ -186,9 +186,12 @@ void test_accelerated_frames() {
 
 void test_gpu_present_path_counters_and_window_reset() {
   offscreen::RenderStats stats;
-  stats.OnGpuFramePresented(offscreen::GpuPresentPath::kWglDxInterop);
-  stats.OnGpuFramePresented(offscreen::GpuPresentPath::kWglDxInterop);
-  stats.OnGpuFramePresented(offscreen::GpuPresentPath::kQImageFallback);
+  stats.OnGpuFramePresented(offscreen::GpuFrameKind::kView,
+                            offscreen::GpuPresentPath::kWglDxInterop);
+  stats.OnGpuFramePresented(offscreen::GpuFrameKind::kView,
+                            offscreen::GpuPresentPath::kWglDxInterop);
+  stats.OnGpuFramePresented(offscreen::GpuFrameKind::kView,
+                            offscreen::GpuPresentPath::kQImageFallback);
 
   const offscreen::RenderStatsSnapshot first = stats.SnapshotAndResetWindow();
   expect_eq(first.window_d3d_to_gl_frames, uint64_t{2},

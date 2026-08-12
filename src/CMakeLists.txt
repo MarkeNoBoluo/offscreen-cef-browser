@@ -13,6 +13,8 @@ set(OFFSCREEN_WIDGET_SRCS
   browser/browser_frame.h
   browser/gpu_frame_bridge.cpp
   browser/gpu_frame_bridge.h
+  browser/gpu_copy_policy.cpp
+  browser/gpu_copy_policy.h
   browser/browser_client.cpp
   browser/browser_client.h
   browser/browser_ime_handler.cpp

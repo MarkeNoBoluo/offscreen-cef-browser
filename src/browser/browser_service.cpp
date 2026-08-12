@@ -6,6 +6,7 @@
 
 #include "app/diagnostic_log.h"
 #include "browser/browser_frame.h"
+#include "browser/gpu_copy_policy.h"
 #include "browser/gpu_frame_bridge.h"
 #include "browser/browser_input_mapping.h"
 #include "browser/render_stats.h"
@@ -65,7 +66,9 @@ CefMouseEvent MakeCefMouseEvent(int x, int y, int qt_buttons,
 BrowserService::BrowserService()
     : frame_(std::make_shared<BrowserFrame>()),
       gpu_frame_bridge_(std::make_shared<GpuFrameBridge>()),
+      gpu_copy_policy_(std::make_shared<GpuCopyPolicy>()),
       render_stats_(std::make_shared<RenderStats>()) {
+  gpu_frame_bridge_->SetCopyPolicy(gpu_copy_policy_);
   DiagnosticLog("BrowserService constructed frame=" +
                 HexValue(reinterpret_cast<uintptr_t>(frame_.get())));
 }
@@ -379,6 +382,10 @@ std::shared_ptr<BrowserFrame> BrowserService::frame() const {
 
 std::shared_ptr<GpuFrameBridge> BrowserService::gpu_frame_bridge() const {
   return gpu_frame_bridge_;
+}
+
+std::shared_ptr<GpuCopyPolicy> BrowserService::gpu_copy_policy() const {
+  return gpu_copy_policy_;
 }
 
 std::shared_ptr<RenderStats> BrowserService::render_stats() const {

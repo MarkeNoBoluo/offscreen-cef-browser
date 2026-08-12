@@ -35,15 +35,28 @@ void BrowserApp::OnBeforeCommandLineProcessing(
     CefRefPtr<CefCommandLine> command_line) {
   DiagnosticLog("BrowserApp::OnBeforeCommandLineProcessing process_type=[" +
                 process_type.ToString() + "]");
+  if (process_type == "gpu-process") {
+    // GPU 进程需要直接获得这两个开关：ignore-gpu-blocklist 绕过硬编码的
+    // gpu_blocklist.json；disable-gpu-driver-bug-workarounds 绕过 driver
+    // bug list 的 workaround（该 list 命中的条目会禁用它判定不可用的 D3D11
+    // 能力，导致 ANGLE/GL 初始化失败，进而禁用 GPU 合成）。这里显式追加，
+    // 不依赖 Chromium 内部 GpuProcessHost 的 kSwitchNames[] 转发列表。
+    command_line->AppendSwitch("ignore-gpu-blocklist");
+    command_line->AppendSwitch("disable-gpu-driver-bug-workarounds");
+    return;
+  }
   if (!process_type.empty()) {
     return;
   }
 
   command_line->AppendSwitch("use-alloy-style");
   command_line->AppendSwitch("enable-gpu");
+  command_line->AppendSwitch("ignore-gpu-blocklist");
+  command_line->AppendSwitch("disable-gpu-driver-bug-workarounds");
   command_line->AppendSwitch("enable-accelerated-video-decode");
   command_line->AppendSwitchWithValue("use-angle", "d3d11");
   DiagnosticLog("BrowserApp appended switches: use-alloy-style, enable-gpu, "
+                "ignore-gpu-blocklist, disable-gpu-driver-bug-workarounds, "
                 "enable-accelerated-video-decode, use-angle=d3d11");
 }
 

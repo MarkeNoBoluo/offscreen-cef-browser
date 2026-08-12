@@ -30,6 +30,7 @@ class BrowserFrame;
 class BrowserGlRenderer;
 class BrowserImeHandler;
 class BrowserService;
+class GpuCopyPolicy;
 class GpuFrameBridge;
 
 // 将 BrowserFrame 中的离屏像素绘制到 Qt 控件，并把 Qt/Windows 输入转发给 CEF。
@@ -58,6 +59,9 @@ class BrowserWidget final : public QOpenGLWidget {
   /// @param frame 浏览器服务提供的帧缓存。
   void SetFrame(std::shared_ptr<BrowserFrame> frame);
   void SetGpuFrameBridge(std::shared_ptr<GpuFrameBridge> gpu_frame_bridge);
+  /// 绑定 GPU 复制降级策略；paintGL 呈现结果会按资源上报。
+  /// @param policy 浏览器服务提供的共享策略。
+  void SetGpuCopyPolicy(std::shared_ptr<GpuCopyPolicy> policy);
   /// 绑定渲染性能统计核心；由 1s 定时器周期导出快照。
   /// @param stats 浏览器服务提供的统计核心。
   void SetRenderStats(std::shared_ptr<RenderStats> stats);
@@ -191,6 +195,7 @@ class BrowserWidget final : public QOpenGLWidget {
   ResizeCallback resize_callback_;
   std::shared_ptr<BrowserFrame> frame_;
   std::shared_ptr<GpuFrameBridge> gpu_frame_bridge_;
+  std::shared_ptr<GpuCopyPolicy> gpu_copy_policy_;
   std::shared_ptr<RenderStats> render_stats_;
   std::unique_ptr<BrowserGlRenderer> gl_renderer_;
   uint64_t last_presented_gpu_frame_generation_ = 0;

@@ -256,6 +256,9 @@ bool CefRuntime::Initialize(const CefRuntimeOptions& options) {
   settings.no_sandbox = true;
   settings.external_message_pump = true;
   settings.windowless_rendering_enabled = true;
+  // VERBOSE 让 cef.log 记录 GPU 初始化实际后端与合成器模式，用于诊断
+  // OnAcceleratedPaint 是否被 CEF 合成器激活（阶段0）。
+  settings.log_severity = LOGSEVERITY_VERBOSE;
   AssignCefString(&settings.browser_subprocess_path,
                   options.subprocess_path.empty()
                       ? ApplicationFilePath(L"offscreen_cef_subprocess.exe")

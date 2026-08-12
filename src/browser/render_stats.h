@@ -64,6 +64,21 @@ struct RenderStatsSnapshot {
   uint64_t total_d3d_to_gl_frames = 0;
   uint64_t window_cpu_readback_fallback_frames = 0;
   uint64_t total_cpu_readback_fallback_frames = 0;
+  uint64_t window_popup_frames = 0;          // 窗口内弹出层帧数
+  uint64_t total_popup_frames = 0;           // 生命周期弹出层帧数
+  uint64_t window_popup_d3d_to_gl_frames = 0;
+  uint64_t total_popup_d3d_to_gl_frames = 0;
+  uint64_t window_gpu_present_failures = 0;  // 窗口内 GPU 呈现失败次数
+  uint64_t total_gpu_present_failures = 0;
+  uint64_t window_fail_register = 0;         // 按失败阶段拆分
+  uint64_t total_fail_register = 0;
+  uint64_t window_fail_lock = 0;
+  uint64_t total_fail_lock = 0;
+  uint64_t window_fail_unlock = 0;
+  uint64_t total_fail_unlock = 0;
+  uint64_t window_fail_open_device = 0;
+  uint64_t total_fail_open_device = 0;
+  std::string gpu_adapter;  // D3D11 适配器描述（UTF-8，如 "NVIDIA GeForce RTX 4060"）
   uint64_t window_accelerated_frames = 0;  // 窗口内 OnAcceleratedPaint 帧数
   uint64_t total_accelerated_frames = 0;   // 生命周期累计加速帧
   uint64_t window_dropped_frames = 0;  // 窗口内掉帧数（帧间隔 > 阈值）
@@ -160,8 +175,16 @@ class RenderStats {
   /// 结束一次 paintEvent：把 schedule/snapshot/draw 阶段写回最近样本。
   void OnPaintEventEnd();
 
-  /// 记录 Qt 端实际完成的一帧呈现路径。
-  void OnGpuFramePresented(GpuPresentPath path);
+  /// 记录 Qt 端完成的一帧呈现结果（按资源，含失败阶段）。
+  /// @param kind 主视图或弹出层。
+  /// @param path 实际呈现路径（GPU 失败时传 kWglDxInterop 表示尝试路径）。
+  /// @param failure_stage ""（成功）或 register/lock/unlock/open_device。
+  void OnGpuFramePresented(GpuFrameKind kind, GpuPresentPath path,
+                           const std::string& failure_stage = "");
+
+  /// 记录当前 D3D11 适配器描述（供 CSV 输出）。
+  /// @param description 适配器描述（UTF-8）。
+  void SetGpuAdapterDescription(const std::string& description);
 
   /// 导出当前快照（不重置窗口聚合）。
   RenderStatsSnapshot Snapshot() const;
@@ -223,6 +246,21 @@ class RenderStats {
   uint64_t total_d3d_to_gl_frames_ = 0;
   uint64_t window_cpu_readback_fallback_frames_ = 0;
   uint64_t total_cpu_readback_fallback_frames_ = 0;
+  uint64_t window_popup_frames_ = 0;
+  uint64_t total_popup_frames_ = 0;
+  uint64_t window_popup_d3d_to_gl_frames_ = 0;
+  uint64_t total_popup_d3d_to_gl_frames_ = 0;
+  uint64_t window_gpu_present_failures_ = 0;
+  uint64_t total_gpu_present_failures_ = 0;
+  uint64_t window_fail_register_ = 0;
+  uint64_t total_fail_register_ = 0;
+  uint64_t window_fail_lock_ = 0;
+  uint64_t total_fail_lock_ = 0;
+  uint64_t window_fail_unlock_ = 0;
+  uint64_t total_fail_unlock_ = 0;
+  uint64_t window_fail_open_device_ = 0;
+  uint64_t total_fail_open_device_ = 0;
+  std::string gpu_adapter_;
   uint64_t window_accelerated_frames_ = 0;
   uint64_t total_accelerated_frames_ = 0;
   uint64_t window_dropped_frames_ = 0;

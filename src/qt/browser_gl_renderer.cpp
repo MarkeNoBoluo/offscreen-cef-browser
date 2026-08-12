@@ -7,6 +7,7 @@
 #include <utility>
 
 #include <Windows.h>
+#include <dxgi.h>
 
 #include <QImage>
 #include <QOpenGLBuffer>
@@ -54,6 +55,9 @@ struct BrowserGlRenderer::Impl {
     int uploaded_width = 0;
     int uploaded_height = 0;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d_texture;
+    // 最近一次 GPU 呈现的失败阶段：""/open_device/register/lock/unlock。
+    // 仅 Render 完成后读取，供 widget 上报降级策略。
+    std::string last_failure_stage;
   };
 
   QOpenGLFunctions* gl = nullptr;
@@ -132,27 +136,44 @@ struct BrowserGlRenderer::Impl {
 
   bool EnsureRegistered(TextureSlot* slot,
                         const GpuFrameSnapshot& snapshot) {
-    if (!snapshot.texture || snapshot.publication.resource_generation == 0 ||
-        !EnsureInteropDevice(snapshot.device.Get())) {
+    if (!snapshot.texture || snapshot.publication.resource_generation == 0) {
+      slot->last_failure_stage.clear();  // 无 GPU 帧，不构成失败。
+      return false;
+    }
+    if (!EnsureInteropDevice(snapshot.device.Get())) {
+      slot->last_failure_stage = "open_device";
       return false;
     }
     if (slot->interop_object &&
         slot->resource_generation ==
             snapshot.publication.resource_generation &&
         slot->d3d_texture.Get() == snapshot.texture.Get()) {
+      slot->last_failure_stage.clear();
       return true;
     }
 
     Unregister(slot);
+    // 为 D3D11 纹理显式设置共享句柄，确保 WGL interop 可跨设备访问
+    // 共享纹理（对未自动生成句柄的 D3D 对象是必需的）。
+    Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
+    if (dx_set_share_handle && SUCCEEDED(snapshot.texture.As(&dxgi_resource))) {
+      HANDLE shared_handle = nullptr;
+      if (SUCCEEDED(dxgi_resource->GetSharedHandle(&shared_handle)) &&
+          shared_handle != nullptr) {
+        dx_set_share_handle(snapshot.texture.Get(), shared_handle);
+      }
+    }
     slot->interop_object = dx_register_object(
         interop_device, snapshot.texture.Get(), slot->texture, GL_TEXTURE_2D,
         kWglAccessReadOnlyNv);
     if (!slot->interop_object) {
+      slot->last_failure_stage = "register";
       SetError("wglDXRegisterObjectNV_failed");
       return false;
     }
     slot->resource_generation = snapshot.publication.resource_generation;
     slot->d3d_texture = snapshot.texture;
+    slot->last_failure_stage.clear();
     DiagnosticLog(
         "BrowserGlRenderer registered D3D11 texture generation=" +
         std::to_string(slot->resource_generation) + " size=" +
@@ -207,19 +228,22 @@ struct BrowserGlRenderer::Impl {
                int viewport_width,
                int viewport_height) {
     if (!EnsureRegistered(slot, snapshot)) {
-      return false;
+      return false;  // last_failure_stage 已由 EnsureRegistered 设置。
     }
     HANDLE object = slot->interop_object;
     if (!dx_lock_objects(interop_device, 1, &object)) {
+      slot->last_failure_stage = "lock";
       SetError("wglDXLockObjectsNV_failed");
       return false;
     }
     const bool drawn = DrawTexture(slot->texture, x, y, width, height,
                                    viewport_width, viewport_height);
     if (!dx_unlock_objects(interop_device, 1, &object)) {
+      slot->last_failure_stage = "unlock";
       SetError("wglDXUnlockObjectsNV_failed");
       return false;
     }
+    slot->last_failure_stage.clear();
     return drawn;
   }
 
@@ -342,14 +366,15 @@ bool BrowserGlRenderer::Initialize() {
   return true;
 }
 
-GpuPresentPath BrowserGlRenderer::Render(
+GpuPresentResult BrowserGlRenderer::Render(
     const GpuFrameSnapshot& view_gpu,
     const GpuFrameSnapshot& popup_gpu,
     const BrowserFrameSnapshot& cpu_frame,
     int viewport_width,
     int viewport_height) {
+  GpuPresentResult result;
   if (!impl_->initialized || !impl_->gl) {
-    return GpuPresentPath::kUnknown;
+    return result;
   }
   impl_->gl->glViewport(0, 0, viewport_width, viewport_height);
   impl_->gl->glDisable(GL_DEPTH_TEST);
@@ -357,8 +382,8 @@ GpuPresentPath BrowserGlRenderer::Render(
   impl_->gl->glClear(GL_COLOR_BUFFER_BIT);
 
   bool drew_view = false;
-  GpuPresentPath path = GpuPresentPath::kUnknown;
   if (impl_->interop_supported && view_gpu.texture) {
+    result.view_attempted_gpu = true;
     std::unique_lock<std::mutex> gpu_access;
     if (view_gpu.access_mutex) {
       gpu_access = std::unique_lock<std::mutex>(*view_gpu.access_mutex);
@@ -366,8 +391,10 @@ GpuPresentPath BrowserGlRenderer::Render(
     drew_view = impl_->DrawGpu(&impl_->view_gpu, view_gpu, 0, 0,
                                viewport_width, viewport_height,
                                viewport_width, viewport_height);
+    result.view_gpu_succeeded = drew_view;
+    result.view_failure_stage = impl_->view_gpu.last_failure_stage;
     if (drew_view) {
-      path = GpuPresentPath::kWglDxInterop;
+      result.path = GpuPresentPath::kWglDxInterop;
     }
   }
   if (!drew_view && cpu_frame.has_view) {
@@ -375,14 +402,16 @@ GpuPresentPath BrowserGlRenderer::Render(
         &impl_->view_cpu, cpu_frame.view_image, 0, 0, viewport_width,
         viewport_height, viewport_width, viewport_height);
     if (drew_view) {
-      path = GpuPresentPath::kCpuGlUpload;
+      result.path = GpuPresentPath::kCpuGlUpload;
     }
   }
+  result.view_presented = drew_view;
 
   if (cpu_frame.popup_visible) {
     const BrowserViewRect& rect = cpu_frame.popup_rect;
     bool popup_drawn = false;
-    if (path == GpuPresentPath::kWglDxInterop && popup_gpu.texture) {
+    if (impl_->interop_supported && popup_gpu.texture) {
+      result.popup_attempted_gpu = true;
       std::unique_lock<std::mutex> gpu_access;
       if (popup_gpu.access_mutex) {
         gpu_access = std::unique_lock<std::mutex>(*popup_gpu.access_mutex);
@@ -390,14 +419,17 @@ GpuPresentPath BrowserGlRenderer::Render(
       popup_drawn = impl_->DrawGpu(
           &impl_->popup_gpu, popup_gpu, rect.x, rect.y, rect.width,
           rect.height, viewport_width, viewport_height);
+      result.popup_gpu_succeeded = popup_drawn;
+      result.popup_failure_stage = impl_->popup_gpu.last_failure_stage;
     }
     if (!popup_drawn && !cpu_frame.popup_image.isNull()) {
       impl_->UploadAndDraw(&impl_->popup_cpu, cpu_frame.popup_image, rect.x,
                            rect.y, rect.width, rect.height, viewport_width,
                            viewport_height);
     }
+    result.popup_presented = popup_drawn || !cpu_frame.popup_image.isNull();
   }
-  return path;
+  return result;
 }
 
 void BrowserGlRenderer::Shutdown() {

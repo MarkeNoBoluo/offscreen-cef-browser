@@ -65,6 +65,13 @@ void RenderStats::ResetWindowLocked(double now_ms) {
   window_paint_events_ = 0;
   window_d3d_to_gl_frames_ = 0;
   window_cpu_readback_fallback_frames_ = 0;
+  window_popup_frames_ = 0;
+  window_popup_d3d_to_gl_frames_ = 0;
+  window_gpu_present_failures_ = 0;
+  window_fail_register_ = 0;
+  window_fail_lock_ = 0;
+  window_fail_unlock_ = 0;
+  window_fail_open_device_ = 0;
   window_accelerated_frames_ = 0;
   window_dropped_frames_ = 0;
   window_coalesced_frames_ = 0;
@@ -190,6 +197,10 @@ void RenderStats::OnPaintEnd() {
     ++total_accelerated_frames_;
     ++window_accelerated_frames_;
   }
+  if (frame_is_popup_) {
+    ++total_popup_frames_;
+    ++window_popup_frames_;
+  }
   dirty_area_sum_px_ += frame_dirty_area_px_;
   dirty_rect_count_sum_ += frame_dirty_count_;
   ++dirty_frames_;
@@ -300,9 +311,37 @@ void RenderStats::OnPaintEventEnd() {
   paint_schedule_ms_ = -1.0;
 }
 
-void RenderStats::OnGpuFramePresented(GpuPresentPath path) {
+void RenderStats::OnGpuFramePresented(GpuFrameKind kind,
+                                      GpuPresentPath path,
+                                      const std::string& failure_stage) {
   if (!enabled_.load(std::memory_order_relaxed)) return;
   std::lock_guard<std::mutex> lock(mutex_);
+  if (!failure_stage.empty()) {
+    // GPU 呈现失败：按阶段拆分，不计入成功呈现路径。
+    ++window_gpu_present_failures_;
+    ++total_gpu_present_failures_;
+    if (failure_stage == "register") {
+      ++window_fail_register_;
+      ++total_fail_register_;
+    } else if (failure_stage == "lock") {
+      ++window_fail_lock_;
+      ++total_fail_lock_;
+    } else if (failure_stage == "unlock") {
+      ++window_fail_unlock_;
+      ++total_fail_unlock_;
+    } else if (failure_stage == "open_device") {
+      ++window_fail_open_device_;
+      ++total_fail_open_device_;
+    }
+    return;
+  }
+  if (kind == GpuFrameKind::kPopup) {
+    if (path == GpuPresentPath::kWglDxInterop) {
+      ++window_popup_d3d_to_gl_frames_;
+      ++total_popup_d3d_to_gl_frames_;
+    }
+    return;
+  }
   gpu_present_path_ = path;
   if (path == GpuPresentPath::kWglDxInterop) {
     ++window_d3d_to_gl_frames_;
@@ -312,6 +351,11 @@ void RenderStats::OnGpuFramePresented(GpuPresentPath path) {
     ++window_cpu_readback_fallback_frames_;
     ++total_cpu_readback_fallback_frames_;
   }
+}
+
+void RenderStats::SetGpuAdapterDescription(const std::string& description) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  gpu_adapter_ = description;
 }
 
 RenderStatsSnapshot RenderStats::Snapshot() const {
@@ -339,6 +383,21 @@ RenderStatsSnapshot RenderStats::SnapshotLocked() const {
       window_cpu_readback_fallback_frames_;
   snapshot.total_cpu_readback_fallback_frames =
       total_cpu_readback_fallback_frames_;
+  snapshot.window_popup_frames = window_popup_frames_;
+  snapshot.total_popup_frames = total_popup_frames_;
+  snapshot.window_popup_d3d_to_gl_frames = window_popup_d3d_to_gl_frames_;
+  snapshot.total_popup_d3d_to_gl_frames = total_popup_d3d_to_gl_frames_;
+  snapshot.window_gpu_present_failures = window_gpu_present_failures_;
+  snapshot.total_gpu_present_failures = total_gpu_present_failures_;
+  snapshot.window_fail_register = window_fail_register_;
+  snapshot.total_fail_register = total_fail_register_;
+  snapshot.window_fail_lock = window_fail_lock_;
+  snapshot.total_fail_lock = total_fail_lock_;
+  snapshot.window_fail_unlock = window_fail_unlock_;
+  snapshot.total_fail_unlock = total_fail_unlock_;
+  snapshot.window_fail_open_device = window_fail_open_device_;
+  snapshot.total_fail_open_device = total_fail_open_device_;
+  snapshot.gpu_adapter = gpu_adapter_;
   snapshot.window_accelerated_frames = window_accelerated_frames_;
   snapshot.total_accelerated_frames = total_accelerated_frames_;
   snapshot.window_dropped_frames = window_dropped_frames_;

@@ -19,6 +19,7 @@
 namespace offscreen {
 
 class BrowserFrame;
+class GpuCopyPolicy;
 class GpuFrameBridge;
 class RenderStats;
 
@@ -157,6 +158,9 @@ class BrowserService final : public BrowserClient::Delegate {
   /// @return 浏览器帧缓存。
   std::shared_ptr<BrowserFrame> frame() const;
   std::shared_ptr<GpuFrameBridge> gpu_frame_bridge() const;
+  /// 返回 GPU 复制降级策略（与 bridge/widget 共享同一实例）。
+  /// @return 共享的降级策略。
+  std::shared_ptr<GpuCopyPolicy> gpu_copy_policy() const;
   /// 获取渲染性能统计实例。
   /// @return 渲染统计核心；与浏览器服务同生命周期。
   std::shared_ptr<RenderStats> render_stats() const;
@@ -352,6 +356,7 @@ class BrowserService final : public BrowserClient::Delegate {
   CefRefPtr<BrowserClient> client_;
   std::shared_ptr<BrowserFrame> frame_;
   std::shared_ptr<GpuFrameBridge> gpu_frame_bridge_;
+  std::shared_ptr<GpuCopyPolicy> gpu_copy_policy_;
   std::shared_ptr<RenderStats> render_stats_;
   PaintUpdateCallback paint_update_callback_;
   CursorChangeCallback cursor_change_callback_;

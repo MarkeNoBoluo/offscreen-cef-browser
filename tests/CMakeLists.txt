@@ -22,7 +22,11 @@ add_offscreen_core_test(gpu_frame_state_tests gpu_frame_state_tests.cpp)
 add_offscreen_core_test(gpu_frame_bridge_tests gpu_frame_bridge_tests.cpp
   d3d11 dxgi)
 target_sources(gpu_frame_bridge_tests PRIVATE
-  ${CMAKE_SOURCE_DIR}/src/browser/gpu_frame_bridge.cpp)
+  ${CMAKE_SOURCE_DIR}/src/browser/gpu_frame_bridge.cpp
+  ${CMAKE_SOURCE_DIR}/src/browser/gpu_copy_policy.cpp)
+add_offscreen_core_test(gpu_copy_policy_tests gpu_copy_policy_tests.cpp)
+target_sources(gpu_copy_policy_tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/src/browser/gpu_copy_policy.cpp)
 add_offscreen_core_test(osr_render_log_tests osr_render_log_tests.cpp)
 add_offscreen_core_test(render_stats_log_tests render_stats_log_tests.cpp)
 
@@ -39,6 +43,7 @@ add_custom_target(offscreen_core_tests
     render_stats_tests
     gpu_frame_state_tests
     gpu_frame_bridge_tests
+    gpu_copy_policy_tests
     osr_render_log_tests
     render_stats_log_tests
 )

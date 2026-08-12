@@ -8,6 +8,7 @@
 
 #include "app/diagnostic_log.h"
 #include "browser/browser_frame.h"
+#include "browser/gpu_copy_policy.h"
 #include "browser/gpu_frame_bridge.h"
 #include "browser/browser_ime_core.h"
 #include "browser/browser_ime_handler.h"
@@ -221,6 +222,12 @@ void BrowserWidget::SetGpuFrameBridge(
 
 void BrowserWidget::SetRenderStats(std::shared_ptr<RenderStats> stats) {
   render_stats_ = std::move(stats);
+}
+
+void BrowserWidget::SetGpuCopyPolicy(std::shared_ptr<GpuCopyPolicy> policy) {
+  gpu_copy_policy_ = std::move(policy);
+  DiagnosticLog("BrowserWidget::SetGpuCopyPolicy policy=" +
+                HexValue(reinterpret_cast<uintptr_t>(gpu_copy_policy_.get())));
 }
 
 void BrowserWidget::EmitRenderStats() {
@@ -765,27 +772,53 @@ void BrowserWidget::paintGL() {
   if (stats) {
     stats->OnDrawImageBegin();
   }
-  const GpuPresentPath path =
-      gl_renderer_ ? gl_renderer_->Render(view_gpu, popup_gpu, cpu_snapshot,
-                                          viewport_width, viewport_height)
-                   : GpuPresentPath::kUnknown;
+  const GpuPresentResult result =
+      gl_renderer_
+          ? gl_renderer_->Render(view_gpu, popup_gpu, cpu_snapshot,
+                                 viewport_width, viewport_height)
+          : GpuPresentResult{};
+  const GpuPresentPath path = result.path;
   if (stats) {
     stats->OnDrawImageDone();
   }
 
-  if (view_gpu.texture && path != GpuPresentPath::kWglDxInterop &&
-      gpu_frame_bridge_) {
-    gpu_frame_bridge_->SetInteropAvailable(false);
+  // 按资源把 GPU 呈现结果上报降级策略：成功清除失败态，失败进入退避。
+  if (gpu_copy_policy_) {
+    if (result.view_attempted_gpu) {
+      gpu_copy_policy_->ReportPresentOutcome(
+          GpuFrameKind::kView, result.view_gpu_succeeded,
+          result.view_gpu_succeeded ? "" : result.view_failure_stage);
+    }
+    if (result.popup_attempted_gpu) {
+      gpu_copy_policy_->ReportPresentOutcome(
+          GpuFrameKind::kPopup, result.popup_gpu_succeeded,
+          result.popup_gpu_succeeded ? "" : result.popup_failure_stage);
+    }
   }
   if (stats) {
-    if (path == GpuPresentPath::kWglDxInterop &&
-        view_gpu.publication.frame_generation !=
-            last_presented_gpu_frame_generation_) {
-      last_presented_gpu_frame_generation_ =
-          view_gpu.publication.frame_generation;
-      stats->OnGpuFramePresented(path);
-    } else if (path == GpuPresentPath::kCpuGlUpload) {
-      stats->OnGpuFramePresented(path);
+    if (result.view_attempted_gpu) {
+      if (result.view_gpu_succeeded &&
+          path == GpuPresentPath::kWglDxInterop &&
+          view_gpu.publication.frame_generation !=
+              last_presented_gpu_frame_generation_) {
+        last_presented_gpu_frame_generation_ =
+            view_gpu.publication.frame_generation;
+        stats->OnGpuFramePresented(GpuFrameKind::kView, path, "");
+      } else if (!result.view_gpu_succeeded) {
+        stats->OnGpuFramePresented(GpuFrameKind::kView,
+                                   GpuPresentPath::kWglDxInterop,
+                                   result.view_failure_stage);
+      }
+    } else if (path == GpuPresentPath::kCpuGlUpload ||
+               path == GpuPresentPath::kQImageFallback) {
+      stats->OnGpuFramePresented(GpuFrameKind::kView, path, "");
+    }
+    if (result.popup_attempted_gpu) {
+      stats->OnGpuFramePresented(GpuFrameKind::kPopup,
+                                 GpuPresentPath::kWglDxInterop,
+                                 result.popup_gpu_succeeded
+                                     ? ""
+                                     : result.popup_failure_stage);
     }
     stats->OnPaintEventEnd();
   }

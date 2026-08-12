@@ -4,6 +4,7 @@
 #include <sstream>
 #include <utility>
 
+#include <windows.h>
 #include <dxgi.h>
 
 #include "app/diagnostic_log.h"
@@ -33,14 +34,25 @@ GpuFrameCopyResult GpuFrameBridge::CopyFromSharedHandle(
   if (!shared_handle) {
     return Failure("null_shared_handle");
   }
+  // 降级门控：该资源当前被策略禁用（含设备级失败）时直接拒绝，
+  // 调用方（OsrRenderHandler）将回退到 CPU readback。此时不锁 access_mutex_。
+  if (copy_policy_ && !copy_policy_->CopyEnabled(kind)) {
+    return Failure("copy_disabled_by_policy");
+  }
 
   std::lock_guard<std::mutex> lock(*access_mutex_);
   if (!EnsureD3D11Device()) {
+    if (copy_policy_) {
+      copy_policy_->ReportPresentOutcome(kind, false, "open_device");
+    }
     return Failure("create_d3d11_device_failed");
   }
 
   Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
   if (!OpenSharedTexture(shared_handle, source.GetAddressOf())) {
+    if (copy_policy_) {
+      copy_policy_->ReportPresentOutcome(kind, false, "register");
+    }
     return Failure("open_shared_texture_failed");
   }
 
@@ -50,14 +62,19 @@ GpuFrameCopyResult GpuFrameBridge::CopyFromSharedHandle(
     return Failure("invalid_shared_texture_size");
   }
 
+  FrameSlot& slot = SelectSlot(kind);
+  const int back_index = 1 - slot.current;
   std::string error;
-  if (!EnsureDestination(kind, source_desc, &error)) {
+  if (!EnsureDestination(kind, back_index, source_desc, &error)) {
+    if (copy_policy_) {
+      copy_policy_->ReportPresentOutcome(kind, false, "register");
+    }
     return Failure(error);
   }
 
-  FrameSlot& slot = SelectSlot(kind);
-  context_->CopyResource(slot.texture.Get(), source.Get());
+  context_->CopyResource(slot.textures[back_index].Get(), source.Get());
   context_->Flush();
+  slot.current = back_index;  // 双缓冲：后备写入完成后翻转呈现面。
 
   GpuFrameCopyResult result;
   result.success = true;
@@ -70,9 +87,10 @@ GpuFrameCopyResult GpuFrameBridge::CopyFromSharedHandle(
 
 GpuFrameSnapshot GpuFrameBridge::Snapshot(GpuFrameKind kind) const {
   std::lock_guard<std::mutex> lock(*access_mutex_);
+  const FrameSlot& slot = SelectSlot(kind);
   GpuFrameSnapshot snapshot;
   snapshot.device = device_;
-  snapshot.texture = SelectSlot(kind).texture;
+  snapshot.texture = slot.textures[slot.current];
   snapshot.publication = publication_state_.Current(kind);
   snapshot.access_mutex = access_mutex_;
   return snapshot;
@@ -86,6 +104,42 @@ void GpuFrameBridge::SetInteropAvailable(bool available) {
 bool GpuFrameBridge::interop_available() const {
   std::lock_guard<std::mutex> lock(*access_mutex_);
   return interop_available_;
+}
+
+void GpuFrameBridge::SetCopyPolicy(std::shared_ptr<GpuCopyPolicy> policy) {
+  std::lock_guard<std::mutex> lock(*access_mutex_);
+  copy_policy_ = std::move(policy);
+}
+
+std::string GpuFrameBridge::adapter_description() const {
+  std::lock_guard<std::mutex> lock(*access_mutex_);
+  if (!device_) {
+    return {};
+  }
+  Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+  if (FAILED(device_.As(&dxgi_device))) {
+    return {};
+  }
+  Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+  if (FAILED(dxgi_device->GetAdapter(adapter.GetAddressOf()))) {
+    return {};
+  }
+  DXGI_ADAPTER_DESC desc{};
+  if (FAILED(adapter->GetDesc(&desc))) {
+    return {};
+  }
+  const int len = WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, nullptr,
+                                      0, nullptr, nullptr);
+  if (len <= 0) {
+    return {};
+  }
+  std::string result(static_cast<std::size_t>(len), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, &result[0], len,
+                      nullptr, nullptr);
+  if (!result.empty() && result.back() == '\0') {
+    result.pop_back();
+  }
+  return result;
 }
 
 bool GpuFrameBridge::EnsureD3D11Device() {
@@ -143,8 +197,11 @@ bool GpuFrameBridge::OpenSharedTexture(void* shared_handle,
             reinterpret_cast<void**>(out_texture)))) {
       device_ = std::move(candidate_device);
       context_ = std::move(candidate_context);
-      view_.texture.Reset();
-      popup_.texture.Reset();
+      for (FrameSlot* slot : {&view_, &popup_}) {
+        slot->textures[0].Reset();
+        slot->textures[1].Reset();
+        slot->current = 0;
+      }
       DiagnosticLog("GpuFrameBridge matched D3D11 adapter index=" +
                     std::to_string(index));
       return true;
@@ -155,12 +212,15 @@ bool GpuFrameBridge::OpenSharedTexture(void* shared_handle,
 
 bool GpuFrameBridge::EnsureDestination(
     GpuFrameKind kind,
+    int buffer_index,
     const D3D11_TEXTURE2D_DESC& source_desc,
     std::string* error) {
   FrameSlot& slot = SelectSlot(kind);
-  if (slot.texture) {
+  Microsoft::WRL::ComPtr<ID3D11Texture2D>& texture =
+      slot.textures[buffer_index];
+  if (texture) {
     D3D11_TEXTURE2D_DESC current{};
-    slot.texture->GetDesc(&current);
+    texture->GetDesc(&current);
     if (current.Width == source_desc.Width &&
         current.Height == source_desc.Height &&
         current.Format == source_desc.Format &&
@@ -168,7 +228,7 @@ bool GpuFrameBridge::EnsureDestination(
         current.SampleDesc.Quality == source_desc.SampleDesc.Quality) {
       return true;
     }
-    slot.texture.Reset();
+    texture.Reset();
   }
 
   D3D11_TEXTURE2D_DESC destination_desc{};
@@ -185,7 +245,7 @@ bool GpuFrameBridge::EnsureDestination(
   destination_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
 
   const HRESULT hr = device_->CreateTexture2D(
-      &destination_desc, nullptr, slot.texture.GetAddressOf());
+      &destination_desc, nullptr, texture.GetAddressOf());
   if (FAILED(hr)) {
     std::ostringstream stream;
     stream << "create_destination_texture_failed:0x" << std::hex
