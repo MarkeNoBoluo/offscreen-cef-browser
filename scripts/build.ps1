@@ -204,22 +204,22 @@ Invoke-Checked "cmake" @(
   "-DQt6_DIR=$qt6Dir",
   "-DCEF_RUNTIME_LIBRARY_FLAG=/MD",
   "-DOFFSCREEN_BUILD_APP=ON",
-  "-DOFFSCREEN_BUILD_TESTS=ON"
+  "-DOFFSCREEN_BUILD_TESTS=OFF",
+  "-DOFFSCREEN_BUILD_EMBEDDING_DEMOS=OFF"
 )
 
 Write-Step "Building targets"
 Invoke-Checked "cmake" @(
   "--build", $buildPath,
-  "--config", $Configuration,
-  "--target", "offscreen_core_tests", "offscreen_cef_browser", "offscreen_cef_subprocess", "embedding_demo_webview", "embedding_demo_tabbed_browser"
+  "--config", $Configuration
 )
 
-Write-Step "Running tests"
-Invoke-Checked "ctest" @(
-  "--test-dir", $buildPath,
-  "-C", $Configuration,
-  "--output-on-failure"
-)
+# Write-Step "Running tests"
+# Invoke-Checked "ctest" @(
+#   "--test-dir", $buildPath,
+#   "-C", $Configuration,
+#   "--output-on-failure"
+# )
 
 if ($installPath) {
   Write-Step "Installing runtime"

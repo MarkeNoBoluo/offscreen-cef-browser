@@ -31,7 +31,7 @@ endif()
 
 option(OFFSCREEN_BUILD_APP "Build the Qt + CEF browser application" ON)
 option(OFFSCREEN_BUILD_TESTS "Build unit tests" OFF)
-option(OFFSCREEN_BUILD_EMBEDDING_DEMOS "Build the CEF embedding demos" ON)
+option(OFFSCREEN_BUILD_EMBEDDING_DEMOS "Build the CEF embedding demos" OFF)
 
 set(CMAKE_CONFIGURATION_TYPES Debug Release CACHE STRING "Supported configurations" FORCE)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/msvc-2022-${OFFSCREEN_ARCH}")
