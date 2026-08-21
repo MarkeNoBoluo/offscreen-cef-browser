@@ -11,6 +11,8 @@ using offscreen::TouchGestureAction;
 using offscreen::TouchGestureState;
 using offscreen::TouchGestureStateMachine;
 using offscreen::TouchPointSnapshot;
+using offscreen::TouchContextMenuSuppressionConfig;
+using offscreen::TouchContextMenuSuppressor;
 
 TouchPointSnapshot pressed(int id, int x, int y) {
   return TouchPointSnapshot{id, x, y, true};
@@ -44,6 +46,14 @@ void expect_double(double actual, double expected, const char* label) {
   if (std::abs(actual - expected) > 0.0001) {
     std::cerr << label << " expected [" << expected << "] but got ["
               << actual << "]\n";
+    std::exit(1);
+  }
+}
+
+void expect_bool(bool actual, bool expected, const char* label) {
+  if (actual != expected) {
+    std::cerr << label << " expected [" << (expected ? "true" : "false")
+              << "] but got [" << (actual ? "true" : "false") << "]\n";
     std::exit(1);
   }
 }
@@ -329,6 +339,51 @@ void test_lost_second_touch_cancels_two_finger_sequence() {
                "lost second touch state");
 }
 
+void test_active_touch_sequence_suppresses_context_menu() {
+  TouchContextMenuSuppressor suppressor;
+
+  suppressor.BeginSequence(1000);
+  expect_bool(suppressor.ShouldSuppress(1001), true,
+              "active touch context menu suppression");
+
+  suppressor.EndSequence(1100);
+  expect_bool(suppressor.ShouldSuppress(1101), false,
+              "short touch context menu after release");
+}
+
+void test_long_touch_suppresses_context_menu_after_release() {
+  TouchContextMenuSuppressionConfig config;
+  config.long_press_duration_ms = 500;
+  config.post_touch_suppression_ms = 700;
+  TouchContextMenuSuppressor suppressor(config);
+
+  suppressor.BeginSequence(2000);
+  suppressor.EndSequence(2500);
+
+  expect_bool(suppressor.ShouldSuppress(2500), true,
+              "long touch context menu at release");
+  expect_bool(suppressor.ShouldSuppress(3199), true,
+              "long touch context menu during suppression window");
+  expect_bool(suppressor.ShouldSuppress(3201), false,
+              "long touch context menu after suppression window");
+}
+
+void test_handled_touch_gesture_suppresses_context_menu_after_release() {
+  TouchContextMenuSuppressionConfig config;
+  config.long_press_duration_ms = 500;
+  config.post_touch_suppression_ms = 700;
+  TouchContextMenuSuppressor suppressor(config);
+
+  suppressor.BeginSequence(4000);
+  suppressor.MarkGestureHandled(4100);
+  suppressor.EndSequence(4150);
+
+  expect_bool(suppressor.ShouldSuppress(4849), true,
+              "handled touch context menu during suppression window");
+  expect_bool(suppressor.ShouldSuppress(4851), false,
+              "handled touch context menu after suppression window");
+}
+
 }  // namespace
 
 int main() {
@@ -351,5 +406,8 @@ int main() {
   test_navigation_direction_and_single_action_limit();
   test_cancel_and_lost_touch_reset_the_sequence();
   test_lost_second_touch_cancels_two_finger_sequence();
+  test_active_touch_sequence_suppresses_context_menu();
+  test_long_touch_suppresses_context_menu_after_release();
+  test_handled_touch_gesture_suppresses_context_menu_after_release();
   return 0;
 }

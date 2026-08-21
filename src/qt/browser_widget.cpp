@@ -20,6 +20,7 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -89,6 +90,10 @@ int CefTouchType(QEventPoint::State state) {
     default:
       return -1;
   }
+}
+
+int64_t CurrentContextMenuTimestampMs() {
+  return static_cast<int64_t>(QDateTime::currentMSecsSinceEpoch());
 }
 
 CefRenderHandler::DragOperation PreferredDragOperation(
@@ -557,6 +562,8 @@ void BrowserWidget::SuppressCefTouchSequence(bool cancel_gesture) {
 }
 
 void BrowserWidget::CancelTouchSequence() {
+  touch_context_menu_suppressor_.CancelSequence(
+      CurrentContextMenuTimestampMs());
   CancelTouchDragging();
   SuppressCefTouchSequence();
   active_touch_points_.clear();
@@ -1013,6 +1020,14 @@ void BrowserWidget::wheelEvent(QWheelEvent* event) {
 }
 
 void BrowserWidget::contextMenuEvent(QContextMenuEvent* event) {
+  if (touch_context_menu_suppressor_.ShouldSuppress(
+          CurrentContextMenuTimestampMs())) {
+    last_context_menu_pos_ = QPoint();
+    DiagnosticLog("BrowserWidget::contextMenuEvent suppressed touch menu");
+    event->accept();
+    return;
+  }
+
   // 不再无条件弹菜单；宿主菜单改由 CEF OnBeforeContextMenu 驱动，
   // 避免与网页自定义右键菜单重叠。
   last_context_menu_pos_ = event->globalPos();
@@ -1020,6 +1035,13 @@ void BrowserWidget::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void BrowserWidget::RequestContextMenu(int view_x, int view_y) {
+  if (touch_context_menu_suppressor_.ShouldSuppress(
+          CurrentContextMenuTimestampMs())) {
+    last_context_menu_pos_ = QPoint();
+    DiagnosticLog("BrowserWidget::RequestContextMenu suppressed touch menu");
+    return;
+  }
+
   // Windows 上 contextMenuEvent（右键抬起）先于 OnBeforeContextMenu 触发，
   // 记录的全局坐标精确无缩放歧义；CEF 视图坐标作回退。
   const QPoint global_pos = last_context_menu_pos_.isNull()
@@ -1188,6 +1210,7 @@ void BrowserWidget::touchEvent(QTouchEvent* event) {
   }
 
   const std::vector<TouchPointSnapshot> snapshots = TouchSnapshots(event);
+  const int64_t context_menu_timestamp_ms = CurrentContextMenuTimestampMs();
   std::vector<int> released_ids;
   released_ids.reserve(points.size());
 
@@ -1230,6 +1253,8 @@ void BrowserWidget::touchEvent(QTouchEvent* event) {
       if (active_touch_points_.empty() &&
           state == QEventPoint::State::Pressed) {
         touch_sequence_primary_id_ = point.id();
+        touch_context_menu_suppressor_.BeginSequence(
+            context_menu_timestamp_ms);
       }
       active_touch_points_[point.id()] = snapshot;
     }
@@ -1248,28 +1273,40 @@ void BrowserWidget::touchEvent(QTouchEvent* event) {
         snapshots, static_cast<int64_t>(event->timestamp()));
     switch (action) {
       case TouchGestureAction::kBack:
+        touch_context_menu_suppressor_.MarkGestureHandled(
+            context_menu_timestamp_ms);
         browser_service_->GoBack();
         SuppressCefTouchSequence();
         DiagnosticLog("BrowserWidget::touchEvent gesture=back");
         break;
       case TouchGestureAction::kForward:
+        touch_context_menu_suppressor_.MarkGestureHandled(
+            context_menu_timestamp_ms);
         browser_service_->GoForward();
         SuppressCefTouchSequence();
         DiagnosticLog("BrowserWidget::touchEvent gesture=forward");
         break;
       case TouchGestureAction::kBeginDrag:
+        touch_context_menu_suppressor_.MarkGestureHandled(
+            context_menu_timestamp_ms);
         SuppressCefTouchSequence(false);
         BeginTouchDragging(gesture_position);
         DiagnosticLog("BrowserWidget::touchEvent gesture=begin_drag");
         break;
       case TouchGestureAction::kUpdateDrag:
+        touch_context_menu_suppressor_.MarkGestureHandled(
+            context_menu_timestamp_ms);
         UpdateTouchDragging(gesture_position);
         break;
       case TouchGestureAction::kEndDrag:
+        touch_context_menu_suppressor_.MarkGestureHandled(
+            context_menu_timestamp_ms);
         EndTouchDragging(gesture_position);
         DiagnosticLog("BrowserWidget::touchEvent gesture=end_drag");
         break;
       case TouchGestureAction::kCancel:
+        touch_context_menu_suppressor_.MarkGestureHandled(
+            context_menu_timestamp_ms);
         CancelTouchDragging();
         SuppressCefTouchSequence();
         DiagnosticLog("BrowserWidget::touchEvent gesture=cancel");
@@ -1305,6 +1342,7 @@ void BrowserWidget::touchEvent(QTouchEvent* event) {
     active_touch_points_.erase(id);
   }
   if (active_touch_points_.empty()) {
+    touch_context_menu_suppressor_.EndSequence(context_menu_timestamp_ms);
     touch_sequence_primary_id_ = -1;
     touch_forwarding_suppressed_ = false;
     touch_gesture_.Cancel();

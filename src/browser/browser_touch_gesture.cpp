@@ -41,6 +41,49 @@ TouchGestureStateMachine::TouchGestureStateMachine(
     TouchGestureThresholds thresholds)
     : thresholds_(thresholds) {}
 
+TouchContextMenuSuppressor::TouchContextMenuSuppressor(
+    TouchContextMenuSuppressionConfig config)
+    : config_(config) {}
+
+void TouchContextMenuSuppressor::BeginSequence(int64_t timestamp_ms) {
+  active_ = true;
+  gesture_handled_ = false;
+  sequence_start_ms_ = timestamp_ms;
+}
+
+void TouchContextMenuSuppressor::MarkGestureHandled(int64_t timestamp_ms) {
+  gesture_handled_ = true;
+  suppress_until_ms_ =
+      std::max(suppress_until_ms_,
+               timestamp_ms + config_.post_touch_suppression_ms);
+}
+
+void TouchContextMenuSuppressor::EndSequence(int64_t timestamp_ms) {
+  if (!active_) {
+    return;
+  }
+
+  const bool long_touch =
+      timestamp_ms - sequence_start_ms_ >= config_.long_press_duration_ms;
+  if (long_touch || gesture_handled_) {
+    suppress_until_ms_ =
+        std::max(suppress_until_ms_,
+                 timestamp_ms + config_.post_touch_suppression_ms);
+  }
+
+  active_ = false;
+  gesture_handled_ = false;
+  sequence_start_ms_ = 0;
+}
+
+void TouchContextMenuSuppressor::CancelSequence(int64_t timestamp_ms) {
+  EndSequence(timestamp_ms);
+}
+
+bool TouchContextMenuSuppressor::ShouldSuppress(int64_t timestamp_ms) const {
+  return active_ || timestamp_ms < suppress_until_ms_;
+}
+
 TouchGestureAction TouchGestureStateMachine::Update(
     const std::vector<TouchPointSnapshot>& points,
     int64_t timestamp_ms) {

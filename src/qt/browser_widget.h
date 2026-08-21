@@ -228,6 +228,7 @@ class BrowserWidget final : public QOpenGLWidget {
   bool touch_drag_active_ = false;
   bool touch_forwarding_suppressed_ = false;
   int touch_sequence_primary_id_ = -1;
+  TouchContextMenuSuppressor touch_context_menu_suppressor_;
   TouchGestureStateMachine touch_gesture_;
   CefRefPtr<CefDragData> cef_drag_data_;
   CefRefPtr<CefDragData> touch_drag_data_;

@@ -54,6 +54,31 @@ struct TouchGestureThresholds {
   double maximum_scale = 3.0;
 };
 
+struct TouchContextMenuSuppressionConfig {
+  int64_t long_press_duration_ms = 500;
+  int64_t post_touch_suppression_ms = 700;
+};
+
+class TouchContextMenuSuppressor {
+ public:
+  explicit TouchContextMenuSuppressor(
+      TouchContextMenuSuppressionConfig config =
+          TouchContextMenuSuppressionConfig{});
+
+  void BeginSequence(int64_t timestamp_ms);
+  void MarkGestureHandled(int64_t timestamp_ms);
+  void EndSequence(int64_t timestamp_ms);
+  void CancelSequence(int64_t timestamp_ms);
+  bool ShouldSuppress(int64_t timestamp_ms) const;
+
+ private:
+  TouchContextMenuSuppressionConfig config_;
+  bool active_ = false;
+  bool gesture_handled_ = false;
+  int64_t sequence_start_ms_ = 0;
+  int64_t suppress_until_ms_ = 0;
+};
+
 class TouchGestureStateMachine {
  public:
   explicit TouchGestureStateMachine(
