@@ -31,6 +31,10 @@ enum class TouchGestureAction {
   kCancel,
 };
 
+bool ShouldSuppressCefTouchSequenceForGestureAction(
+    TouchGestureAction action);
+bool ShouldMarkContextMenuHandledForGestureAction(TouchGestureAction action);
+
 enum class TouchGestureState {
   kIdle,
   kSingleTouchCandidate,

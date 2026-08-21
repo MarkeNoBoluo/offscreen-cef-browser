@@ -13,6 +13,8 @@ using offscreen::TouchGestureStateMachine;
 using offscreen::TouchPointSnapshot;
 using offscreen::TouchContextMenuSuppressionConfig;
 using offscreen::TouchContextMenuSuppressor;
+using offscreen::ShouldMarkContextMenuHandledForGestureAction;
+using offscreen::ShouldSuppressCefTouchSequenceForGestureAction;
 
 TouchPointSnapshot pressed(int id, int x, int y) {
   return TouchPointSnapshot{id, x, y, true};
@@ -384,6 +386,46 @@ void test_handled_touch_gesture_suppresses_context_menu_after_release() {
               "handled touch context menu after suppression window");
 }
 
+void test_long_press_drag_preserves_page_touch_stream() {
+  expect_bool(ShouldSuppressCefTouchSequenceForGestureAction(
+                  TouchGestureAction::kBeginDrag),
+              false, "begin drag preserves touch stream");
+  expect_bool(ShouldSuppressCefTouchSequenceForGestureAction(
+                  TouchGestureAction::kUpdateDrag),
+              false, "update drag preserves touch stream");
+  expect_bool(ShouldSuppressCefTouchSequenceForGestureAction(
+                  TouchGestureAction::kEndDrag),
+              false, "end drag preserves touch stream");
+
+  expect_bool(ShouldMarkContextMenuHandledForGestureAction(
+                  TouchGestureAction::kBeginDrag),
+              true, "begin drag suppresses context menu");
+  expect_bool(ShouldMarkContextMenuHandledForGestureAction(
+                  TouchGestureAction::kUpdateDrag),
+              true, "update drag suppresses context menu");
+  expect_bool(ShouldMarkContextMenuHandledForGestureAction(
+                  TouchGestureAction::kEndDrag),
+              true, "end drag suppresses context menu");
+}
+
+void test_navigation_and_cancel_suppress_page_touch_stream() {
+  expect_bool(ShouldSuppressCefTouchSequenceForGestureAction(
+                  TouchGestureAction::kBack),
+              true, "back suppresses touch stream");
+  expect_bool(ShouldSuppressCefTouchSequenceForGestureAction(
+                  TouchGestureAction::kForward),
+              true, "forward suppresses touch stream");
+  expect_bool(ShouldSuppressCefTouchSequenceForGestureAction(
+                  TouchGestureAction::kCancel),
+              true, "cancel suppresses touch stream");
+  expect_bool(ShouldSuppressCefTouchSequenceForGestureAction(
+                  TouchGestureAction::kNone),
+              false, "none preserves touch stream");
+  expect_bool(ShouldMarkContextMenuHandledForGestureAction(
+                  TouchGestureAction::kNone),
+              false, "none does not suppress context menu");
+}
+
 }  // namespace
 
 int main() {
@@ -409,5 +451,7 @@ int main() {
   test_active_touch_sequence_suppresses_context_menu();
   test_long_touch_suppresses_context_menu_after_release();
   test_handled_touch_gesture_suppresses_context_menu_after_release();
+  test_long_press_drag_preserves_page_touch_stream();
+  test_navigation_and_cancel_suppress_page_touch_stream();
   return 0;
 }

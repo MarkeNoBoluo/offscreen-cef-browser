@@ -37,6 +37,28 @@ double Distance(const TouchPointSnapshot& first,
 
 }  // namespace
 
+bool ShouldSuppressCefTouchSequenceForGestureAction(
+    TouchGestureAction action) {
+  switch (action) {
+    case TouchGestureAction::kForward:
+    case TouchGestureAction::kBack:
+    case TouchGestureAction::kCancel:
+      return true;
+    case TouchGestureAction::kBeginDrag:
+    case TouchGestureAction::kUpdateDrag:
+    case TouchGestureAction::kEndDrag:
+    case TouchGestureAction::kNone:
+      return false;
+  }
+
+  return false;
+}
+
+bool ShouldMarkContextMenuHandledForGestureAction(
+    TouchGestureAction action) {
+  return action != TouchGestureAction::kNone;
+}
+
 TouchGestureStateMachine::TouchGestureStateMachine(
     TouchGestureThresholds thresholds)
     : thresholds_(thresholds) {}

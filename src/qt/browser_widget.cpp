@@ -1260,55 +1260,45 @@ void BrowserWidget::touchEvent(QTouchEvent* event) {
     }
   }
 
-  QPoint gesture_position;
-  for (const TouchPointSnapshot& snapshot : snapshots) {
-    if (snapshot.id == touch_sequence_primary_id_) {
-      gesture_position = QPoint(qRound(snapshot.x), qRound(snapshot.y));
-      break;
-    }
-  }
-
   if (!touch_forwarding_suppressed_ || touch_drag_active_) {
     const TouchGestureAction action = touch_gesture_.Update(
         snapshots, static_cast<int64_t>(event->timestamp()));
+    if (ShouldMarkContextMenuHandledForGestureAction(action)) {
+      touch_context_menu_suppressor_.MarkGestureHandled(
+          context_menu_timestamp_ms);
+    }
+    const bool suppress_touch_stream =
+        ShouldSuppressCefTouchSequenceForGestureAction(action);
     switch (action) {
       case TouchGestureAction::kBack:
-        touch_context_menu_suppressor_.MarkGestureHandled(
-            context_menu_timestamp_ms);
         browser_service_->GoBack();
-        SuppressCefTouchSequence();
+        if (suppress_touch_stream) {
+          SuppressCefTouchSequence();
+        }
         DiagnosticLog("BrowserWidget::touchEvent gesture=back");
         break;
       case TouchGestureAction::kForward:
-        touch_context_menu_suppressor_.MarkGestureHandled(
-            context_menu_timestamp_ms);
         browser_service_->GoForward();
-        SuppressCefTouchSequence();
+        if (suppress_touch_stream) {
+          SuppressCefTouchSequence();
+        }
         DiagnosticLog("BrowserWidget::touchEvent gesture=forward");
         break;
       case TouchGestureAction::kBeginDrag:
-        touch_context_menu_suppressor_.MarkGestureHandled(
-            context_menu_timestamp_ms);
-        SuppressCefTouchSequence(false);
-        BeginTouchDragging(gesture_position);
-        DiagnosticLog("BrowserWidget::touchEvent gesture=begin_drag");
+        DiagnosticLog(
+            "BrowserWidget::touchEvent gesture=begin_drag preserve_touch");
         break;
       case TouchGestureAction::kUpdateDrag:
-        touch_context_menu_suppressor_.MarkGestureHandled(
-            context_menu_timestamp_ms);
-        UpdateTouchDragging(gesture_position);
         break;
       case TouchGestureAction::kEndDrag:
-        touch_context_menu_suppressor_.MarkGestureHandled(
-            context_menu_timestamp_ms);
-        EndTouchDragging(gesture_position);
-        DiagnosticLog("BrowserWidget::touchEvent gesture=end_drag");
+        DiagnosticLog(
+            "BrowserWidget::touchEvent gesture=end_drag preserve_touch");
         break;
       case TouchGestureAction::kCancel:
-        touch_context_menu_suppressor_.MarkGestureHandled(
-            context_menu_timestamp_ms);
         CancelTouchDragging();
-        SuppressCefTouchSequence();
+        if (suppress_touch_stream) {
+          SuppressCefTouchSequence();
+        }
         DiagnosticLog("BrowserWidget::touchEvent gesture=cancel");
         break;
       case TouchGestureAction::kNone:
