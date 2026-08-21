@@ -37,6 +37,7 @@
 #include <QScreen>
 #include <QThread>
 #include <QTimer>
+#include <QTouchEvent>
 #include <QUrl>
 #include <QWindow>
 #include <QWheelEvent>
@@ -76,6 +77,19 @@ constexpr int kCursorZoomIn = 39;            // CT_ZOOMIN
 constexpr int kCursorZoomOut = 40;           // CT_ZOOMOUT
 constexpr int kCursorGrab = 41;              // CT_GRAB
 constexpr int kCursorGrabbing = 42;          // CT_GRABBING
+
+int CefTouchType(QEventPoint::State state) {
+  switch (state) {
+    case QEventPoint::State::Pressed:
+      return CEF_TET_PRESSED;
+    case QEventPoint::State::Updated:
+      return CEF_TET_MOVED;
+    case QEventPoint::State::Released:
+      return CEF_TET_RELEASED;
+    default:
+      return -1;
+  }
+}
 
 CefRenderHandler::DragOperation PreferredDragOperation(
     CefRenderHandler::DragOperationsMask allowed_ops) {
@@ -157,6 +171,7 @@ BrowserWidget::BrowserWidget(QWidget* parent)
   setAttribute(Qt::WA_NativeWindow, true);
   setAttribute(Qt::WA_DontCreateNativeAncestors, false);
   setAttribute(Qt::WA_InputMethodEnabled, true);
+  setAttribute(Qt::WA_AcceptTouchEvents, true);
   setAcceptDrops(true);
   setFocusPolicy(Qt::StrongFocus);
   setMouseTracking(true);
@@ -169,6 +184,7 @@ BrowserWidget::BrowserWidget(QWidget* parent)
 }
 
 BrowserWidget::~BrowserWidget() {
+  CancelTouchSequence();
   if (gpu_frame_bridge_) {
     gpu_frame_bridge_->SetInteropAvailable(false);
   }
@@ -251,6 +267,7 @@ void BrowserWidget::SetResizeCallback(ResizeCallback resize_callback) {
 
 void BrowserWidget::SetBrowserService(BrowserService* service) {
   if (browser_service_ && browser_service_ != service) {
+    CancelTouchSequence();
     CancelCefDragging();
     browser_service_->SetStartDraggingCallback({});
     browser_service_->SetUpdateDragCursorCallback({});
@@ -478,6 +495,65 @@ void BrowserWidget::CancelCefDragging() {
   cef_drag_allowed_ops_ = DRAG_OPERATION_NONE;
   cef_drag_current_op_ = DRAG_OPERATION_NONE;
   setCursor(Qt::ArrowCursor);
+}
+
+std::vector<TouchPointSnapshot> BrowserWidget::TouchSnapshots(
+    const QTouchEvent* event) const {
+  std::vector<TouchPointSnapshot> snapshots;
+  snapshots.reserve(event->points().size());
+  for (const QEventPoint& point : event->points()) {
+    const QPoint position = point.position().toPoint();
+    snapshots.push_back({point.id(), position.x(), position.y(),
+                         point.state() != QEventPoint::State::Released});
+  }
+  return snapshots;
+}
+
+void BrowserWidget::BeginTouchDragging(const QPoint& position) {
+  if (!browser_service_) return;
+
+  CancelTouchDragging();
+  touch_drag_data_ = CefDragData::Create();
+  if (!touch_drag_data_) return;
+  browser_service_->SendDragTargetDragEnter(
+      touch_drag_data_, position.x(), position.y(), 0, 0);
+  touch_drag_active_ = true;
+}
+
+void BrowserWidget::UpdateTouchDragging(const QPoint& position) {
+  if (!browser_service_ || !touch_drag_active_) return;
+  browser_service_->SendDragTargetDragOver(position.x(), position.y(), 0, 0);
+}
+
+void BrowserWidget::EndTouchDragging(const QPoint& position) {
+  if (browser_service_ && touch_drag_active_) {
+    browser_service_->SendDragTargetDrop(position.x(), position.y(), 0, 0);
+  }
+  touch_drag_active_ = false;
+  touch_drag_data_ = nullptr;
+}
+
+void BrowserWidget::CancelTouchDragging() {
+  if (browser_service_ && touch_drag_active_) {
+    browser_service_->SendDragTargetDragLeave();
+  }
+  touch_drag_active_ = false;
+  touch_drag_data_ = nullptr;
+}
+
+void BrowserWidget::CancelTouchSequence() {
+  CancelTouchDragging();
+  if (browser_service_) {
+    for (const auto& [id, point] : active_touch_points_) {
+      browser_service_->SendTouchEvent(
+          id, static_cast<float>(point.x), static_cast<float>(point.y),
+          CEF_TET_CANCELLED, 0, 0.0f, 0.0f, 0.0f);
+    }
+  }
+  active_touch_points_.clear();
+  touch_sequence_primary_id_ = -1;
+  touch_navigation_sent_ = false;
+  touch_gesture_.Cancel();
 }
 
 void BrowserWidget::OnImeCompositionRangeChanged(
@@ -1047,6 +1123,7 @@ void BrowserWidget::focusOutEvent(QFocusEvent* event) {
   QWidget::focusOutEvent(event);
   DiagnosticLog("BrowserWidget::focusOutEvent composing=" +
                 std::string(is_composing_ ? "true" : "false"));
+  CancelTouchSequence();
   CancelCefDragging();
   if (browser_service_) {
     browser_service_->SetBrowserFocus(false);
@@ -1059,6 +1136,150 @@ void BrowserWidget::focusOutEvent(QFocusEvent* event) {
       browser_service_->ImeCancelComposition();
     }
   }
+}
+
+bool BrowserWidget::event(QEvent* event) {
+  if (event && (event->type() == QEvent::TouchBegin ||
+                event->type() == QEvent::TouchUpdate ||
+                event->type() == QEvent::TouchEnd ||
+                event->type() == QEvent::TouchCancel)) {
+    touchEvent(static_cast<QTouchEvent*>(event));
+    return true;
+  }
+  return QOpenGLWidget::event(event);
+}
+
+void BrowserWidget::touchEvent(QTouchEvent* event) {
+  if (!event) return;
+
+  if (!browser_service_) {
+    CancelTouchSequence();
+    event->accept();
+    return;
+  }
+
+  if (event->type() == QEvent::TouchCancel) {
+    const std::vector<TouchPointSnapshot> snapshots = TouchSnapshots(event);
+    for (const TouchPointSnapshot& snapshot : snapshots) {
+      active_touch_points_[snapshot.id] = snapshot;
+    }
+    CancelTouchSequence();
+    event->accept();
+    return;
+  }
+
+  const auto& points = event->points();
+  if (points.empty()) {
+    CancelTouchSequence();
+    event->accept();
+    return;
+  }
+
+  const std::vector<TouchPointSnapshot> snapshots = TouchSnapshots(event);
+  std::vector<int> released_ids;
+  released_ids.reserve(points.size());
+  bool invalid_points = false;
+  for (size_t index = 0; index < points.size(); ++index) {
+    const QEventPoint& point = points.at(index);
+    const QPointF position = point.position();
+    if (point.id() < 0 || !std::isfinite(position.x()) ||
+        !std::isfinite(position.y())) {
+      invalid_points = true;
+      break;
+    }
+
+    const QEventPoint::State state = point.state();
+    if (state == QEventPoint::State::Stationary) {
+      active_touch_points_[point.id()] = snapshots.at(index);
+      continue;
+    }
+
+    const int touch_type = CefTouchType(state);
+    if (touch_type < 0) {
+      invalid_points = true;
+      break;
+    }
+
+    const TouchPointSnapshot& snapshot = snapshots.at(index);
+    const QSizeF diameters = point.ellipseDiameters();
+    browser_service_->SendTouchEvent(
+        point.id(), static_cast<float>(position.x()),
+        static_cast<float>(position.y()), touch_type,
+        static_cast<int>(event->modifiers()),
+        static_cast<float>(std::max<qreal>(0.0, diameters.width() / 2.0)),
+        static_cast<float>(std::max<qreal>(0.0, diameters.height() / 2.0)),
+        static_cast<float>(std::max<qreal>(0.0, point.pressure())));
+
+    if (state == QEventPoint::State::Released) {
+      released_ids.push_back(point.id());
+      continue;
+    }
+
+    if (active_touch_points_.empty() &&
+        state == QEventPoint::State::Pressed) {
+      touch_sequence_primary_id_ = point.id();
+    }
+    active_touch_points_[point.id()] = snapshot;
+  }
+
+  if (invalid_points) {
+    CancelTouchSequence();
+    event->accept();
+    return;
+  }
+
+  QPoint gesture_position;
+  for (const TouchPointSnapshot& snapshot : snapshots) {
+    if (snapshot.id == touch_sequence_primary_id_) {
+      gesture_position = QPoint(snapshot.x, snapshot.y);
+      break;
+    }
+  }
+
+  if (!touch_navigation_sent_) {
+    const TouchGestureAction action = touch_gesture_.Update(
+        snapshots, static_cast<int64_t>(event->timestamp()));
+    switch (action) {
+      case TouchGestureAction::kBack:
+        browser_service_->GoBack();
+        CancelTouchSequence();
+        touch_navigation_sent_ = true;
+        DiagnosticLog("BrowserWidget::touchEvent gesture=back");
+        break;
+      case TouchGestureAction::kForward:
+        browser_service_->GoForward();
+        CancelTouchSequence();
+        touch_navigation_sent_ = true;
+        DiagnosticLog("BrowserWidget::touchEvent gesture=forward");
+        break;
+      case TouchGestureAction::kBeginDrag:
+        BeginTouchDragging(gesture_position);
+        DiagnosticLog("BrowserWidget::touchEvent gesture=begin_drag");
+        break;
+      case TouchGestureAction::kUpdateDrag:
+        UpdateTouchDragging(gesture_position);
+        break;
+      case TouchGestureAction::kEndDrag:
+        EndTouchDragging(gesture_position);
+        DiagnosticLog("BrowserWidget::touchEvent gesture=end_drag");
+        break;
+      case TouchGestureAction::kCancel:
+        CancelTouchSequence();
+        DiagnosticLog("BrowserWidget::touchEvent gesture=cancel");
+        break;
+      case TouchGestureAction::kNone:
+        break;
+    }
+  }
+
+  for (const int id : released_ids) {
+    active_touch_points_.erase(id);
+  }
+  if (active_touch_points_.empty()) {
+    touch_sequence_primary_id_ = -1;
+    touch_navigation_sent_ = false;
+  }
+  event->accept();
 }
 
 void BrowserWidget::dragEnterEvent(QDragEnterEvent* event) {

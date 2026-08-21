@@ -228,6 +228,18 @@ class BrowserService final : public BrowserClient::Delegate {
   /// @param delta_y 垂直滚动量。
   void SendMouseWheelEvent(int x, int y, int qt_buttons,
                             int qt_modifiers, int delta_x, int delta_y);
+  /// 转发单个触点事件。
+  /// @param id 触点标识。
+  /// @param x 逻辑 x 坐标。
+  /// @param y 逻辑 y 坐标。
+  /// @param touch_type CEF_TET_* 触点状态。
+  /// @param qt_modifiers Qt 修饰键位掩码。
+  /// @param radius_x 触点椭圆半径 x。
+  /// @param radius_y 触点椭圆半径 y。
+  /// @param pressure 触点压力。
+  void SendTouchEvent(int id, float x, float y, int touch_type,
+                      int qt_modifiers, float radius_x, float radius_y,
+                      float pressure);
   /// 通知 CEF 有外部拖拽数据进入离屏视图。
   /// @param drag_data CEF 拖拽数据。
   /// @param x 逻辑 x 坐标。

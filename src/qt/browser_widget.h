@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include <QPoint>
@@ -11,6 +12,7 @@
 
 #include "browser/browser_geometry.h"
 #include "browser/browser_paint_geometry.h"
+#include "browser/browser_touch_gesture.h"
 #include "browser/render_stats.h"
 #include "browser/tab_manager.h"
 #include "include/cef_drag_data.h"
@@ -23,6 +25,7 @@ class QDragMoveEvent;
 class QDropEvent;
 class QMimeData;
 class QTimer;
+class QTouchEvent;
 
 namespace offscreen {
 
@@ -155,6 +158,13 @@ class BrowserWidget final : public QOpenGLWidget {
   /// 取消预编辑并将失焦状态同步到 CEF。
   /// @param event Qt 焦点事件。
   void focusOutEvent(QFocusEvent* event) override;
+  /// 将 Qt 触摸事件分派到触摸处理函数。
+  /// @param event Qt 事件。
+  /// @return 触摸事件始终已处理，其他事件交给基类。
+  bool event(QEvent* event) override;
+  /// 将 Qt 触摸事件和已确认的手势动作转发给 CEF。
+  /// @param event Qt 触摸事件。
+  void touchEvent(QTouchEvent* event);
   /// 将 Qt 拖拽进入事件转换为 CEF OSR 拖拽进入。
   /// @param event Qt 拖拽进入事件。
   void dragEnterEvent(QDragEnterEvent* event) override;
@@ -191,6 +201,13 @@ class BrowserWidget final : public QOpenGLWidget {
                          int modifiers,
                          bool dropped);
   void CancelCefDragging();
+  std::vector<TouchPointSnapshot> TouchSnapshots(
+      const QTouchEvent* event) const;
+  void CancelTouchSequence();
+  void BeginTouchDragging(const QPoint& position);
+  void UpdateTouchDragging(const QPoint& position);
+  void EndTouchDragging(const QPoint& position);
+  void CancelTouchDragging();
 
   ResizeCallback resize_callback_;
   std::shared_ptr<BrowserFrame> frame_;
@@ -207,12 +224,18 @@ class BrowserWidget final : public QOpenGLWidget {
   bool drag_active_ = false;
   bool cef_drag_source_active_ = false;
   bool cef_drag_target_active_ = false;
+  bool touch_drag_active_ = false;
+  bool touch_navigation_sent_ = false;
+  int touch_sequence_primary_id_ = -1;
+  TouchGestureStateMachine touch_gesture_;
   CefRefPtr<CefDragData> cef_drag_data_;
+  CefRefPtr<CefDragData> touch_drag_data_;
   CefRenderHandler::DragOperationsMask cef_drag_allowed_ops_ =
       DRAG_OPERATION_NONE;
   CefRenderHandler::DragOperation cef_drag_current_op_ = DRAG_OPERATION_NONE;
   QPoint last_mouse_pos_;
   QPoint last_context_menu_pos_;
+  std::unordered_map<int, TouchPointSnapshot> active_touch_points_;
 };
 
 }  // namespace offscreen
