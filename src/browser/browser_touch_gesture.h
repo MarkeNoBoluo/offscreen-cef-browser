@@ -70,12 +70,15 @@ class TouchGestureStateMachine {
   int start_y_ = 0;
   int recent_x_ = 0;
   int recent_y_ = 0;
+  int long_press_x_ = 0;
+  int long_press_y_ = 0;
   int64_t start_timestamp_ms_ = 0;
   double initial_two_finger_distance_ = 0.0;
   double scale_factor_ = 1.0;
   bool long_press_eligible_ = false;
   bool horizontal_swipe_ = false;
   bool navigation_sent_ = false;
+  bool awaiting_contact_release_after_zero_scale_ = false;
 };
 
 }  // namespace offscreen

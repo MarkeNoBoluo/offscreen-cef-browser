@@ -15,6 +15,7 @@ const TouchPointSnapshot* FindPoint(
       return &point;
     }
   }
+
   return nullptr;
 }
 
@@ -52,6 +53,15 @@ TouchGestureAction TouchGestureStateMachine::Update(
     }
   }
 
+  if (state_ == TouchGestureState::kCancelled &&
+      awaiting_contact_release_after_zero_scale_) {
+    if (first_pressed != nullptr) {
+      return TouchGestureAction::kNone;
+    }
+    ResetToIdle();
+    return TouchGestureAction::kNone;
+  }
+
   if (state_ == TouchGestureState::kIdle ||
       state_ == TouchGestureState::kCancelled) {
     if (first_pressed == nullptr) {
@@ -77,7 +87,9 @@ TouchGestureAction TouchGestureStateMachine::Update(
     if (state_ != TouchGestureState::kTwoFingerScaleCandidate &&
         state_ != TouchGestureState::kTwoFingerZoom) {
       BeginTwoFingerScale(*primary, *second);
-      return TouchGestureAction::kNone;
+      return state_ == TouchGestureState::kCancelled
+                 ? TouchGestureAction::kCancel
+                 : TouchGestureAction::kNone;
     }
 
     const double distance = Distance(*primary, *second);
@@ -120,11 +132,16 @@ TouchGestureAction TouchGestureStateMachine::Update(
         timestamp_ms - start_timestamp_ms_ >=
             thresholds_.long_press_duration_ms) {
       state_ = TouchGestureState::kLongPressCandidate;
+      long_press_x_ = primary->x;
+      long_press_y_ = primary->y;
     }
   }
 
   if (state_ == TouchGestureState::kLongPressCandidate) {
-    if (movement >= thresholds_.drag_start_dip) {
+    const double drag_movement = std::hypot(
+        static_cast<double>(primary->x - long_press_x_),
+        static_cast<double>(primary->y - long_press_y_));
+    if (drag_movement >= thresholds_.drag_start_dip) {
       state_ = TouchGestureState::kLongPressDrag;
       recent_x_ = primary->x;
       recent_y_ = primary->y;
@@ -182,12 +199,15 @@ void TouchGestureStateMachine::BeginSingleTouch(
   start_y_ = point.y;
   recent_x_ = point.x;
   recent_y_ = point.y;
+  long_press_x_ = point.x;
+  long_press_y_ = point.y;
   start_timestamp_ms_ = timestamp_ms;
   initial_two_finger_distance_ = 0.0;
   scale_factor_ = 1.0;
   long_press_eligible_ = true;
   horizontal_swipe_ = false;
   navigation_sent_ = false;
+  awaiting_contact_release_after_zero_scale_ = false;
 }
 
 void TouchGestureStateMachine::BeginTwoFingerScale(
@@ -199,6 +219,11 @@ void TouchGestureStateMachine::BeginTwoFingerScale(
   long_press_eligible_ = false;
   horizontal_swipe_ = false;
   navigation_sent_ = false;
+  awaiting_contact_release_after_zero_scale_ =
+      initial_two_finger_distance_ == 0.0;
+  if (awaiting_contact_release_after_zero_scale_) {
+    state_ = TouchGestureState::kCancelled;
+  }
 }
 
 void TouchGestureStateMachine::ResetToIdle() {
@@ -209,6 +234,7 @@ void TouchGestureStateMachine::ResetToIdle() {
   long_press_eligible_ = false;
   horizontal_swipe_ = false;
   navigation_sent_ = false;
+  awaiting_contact_release_after_zero_scale_ = false;
 }
 
 }  // namespace offscreen

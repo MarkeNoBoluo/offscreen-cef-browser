@@ -102,6 +102,45 @@ void test_two_finger_distance_change_enters_zoom_at_20_dip() {
   expect_double(machine.scale_factor(), 2.0, "20 DIP scale factor");
 }
 
+void test_scale_factor_is_clamped_to_configured_bounds() {
+  TouchGestureStateMachine machine;
+  begin_single_touch(machine);
+
+  expect_action(machine.Update({pressed(1, 0, 0), pressed(2, 20, 0)}, 10),
+                TouchGestureAction::kNone, "scale start action");
+  expect_action(machine.Update({pressed(1, 0, 0), pressed(2, 80, 0)}, 20),
+                TouchGestureAction::kNone, "maximum scale action");
+  expect_state(machine.state(), TouchGestureState::kTwoFingerZoom,
+               "maximum scale state");
+  expect_double(machine.scale_factor(), 3.0, "maximum scale factor");
+
+  expect_action(machine.Update({pressed(1, 0, 0), pressed(2, 1, 0)}, 30),
+                TouchGestureAction::kNone, "minimum scale action");
+  expect_double(machine.scale_factor(), 0.5, "minimum scale factor");
+}
+
+void test_zero_distance_two_finger_start_cancels_until_release() {
+  TouchGestureStateMachine machine;
+
+  expect_action(machine.Update({pressed(1, 0, 0), pressed(2, 0, 0)}, 0),
+                TouchGestureAction::kCancel, "zero distance cancel action");
+  expect_state(machine.state(), TouchGestureState::kCancelled,
+               "zero distance cancel state");
+  expect_double(machine.scale_factor(), 1.0, "zero distance scale factor");
+
+  expect_action(machine.Update({pressed(1, 0, 0), pressed(2, 40, 0)}, 10),
+                TouchGestureAction::kNone, "zero distance later move action");
+  expect_state(machine.state(), TouchGestureState::kCancelled,
+               "zero distance later move state");
+  expect_double(machine.scale_factor(), 1.0,
+                "zero distance later move scale factor");
+
+  expect_action(machine.Update({}, 20), TouchGestureAction::kNone,
+                "zero distance release action");
+  expect_state(machine.state(), TouchGestureState::kIdle,
+               "zero distance release state");
+}
+
 void test_single_touch_never_enters_two_finger_zoom() {
   TouchGestureStateMachine machine;
   begin_single_touch(machine);
@@ -161,6 +200,48 @@ void test_long_press_drag_starts_at_12_dip_and_ends_on_release() {
   expect_action(machine.Update({released(1, 13, 0)}, 540),
                 TouchGestureAction::kEndDrag, "drag release action");
   expect_state(machine.state(), TouchGestureState::kIdle, "drag release state");
+}
+
+void test_long_press_drag_uses_movement_after_confirmation() {
+  TouchGestureStateMachine machine;
+  begin_single_touch(machine);
+
+  expect_action(machine.Update({pressed(1, 9, 0)}, 500),
+                TouchGestureAction::kNone, "offset long press action");
+  expect_state(machine.state(), TouchGestureState::kLongPressCandidate,
+               "offset long press state");
+
+  expect_action(machine.Update({pressed(1, 12, 0)}, 510),
+                TouchGestureAction::kNone, "three DIP drag action");
+  expect_state(machine.state(), TouchGestureState::kLongPressCandidate,
+               "three DIP drag state");
+
+  expect_action(machine.Update({pressed(1, 21, 0)}, 520),
+                TouchGestureAction::kBeginDrag, "12 DIP post-confirm action");
+}
+
+void test_release_before_long_press_cleans_up_without_drag_action() {
+  TouchGestureStateMachine machine;
+  begin_single_touch(machine);
+
+  expect_action(machine.Update({released(1, 0, 0)}, 499),
+                TouchGestureAction::kNone, "early release action");
+  expect_state(machine.state(), TouchGestureState::kIdle,
+               "early release state");
+}
+
+void test_release_after_long_press_before_drag_cleans_up_without_drag_action() {
+  TouchGestureStateMachine machine;
+  begin_single_touch(machine);
+
+  expect_action(machine.Update({pressed(1, 0, 0)}, 500),
+                TouchGestureAction::kNone, "long press before release action");
+  expect_state(machine.state(), TouchGestureState::kLongPressCandidate,
+               "long press before release state");
+  expect_action(machine.Update({released(1, 0, 0)}, 510),
+                TouchGestureAction::kNone, "post-long-press release action");
+  expect_state(machine.state(), TouchGestureState::kIdle,
+               "post-long-press release state");
 }
 
 void test_pre_long_press_move_uses_normal_swipe() {
@@ -239,10 +320,15 @@ int main() {
   test_single_touch_enters_normal_swipe_at_15_dip();
   test_equal_displacement_is_vertical_swipe();
   test_two_finger_distance_change_enters_zoom_at_20_dip();
+  test_scale_factor_is_clamped_to_configured_bounds();
+  test_zero_distance_two_finger_start_cancels_until_release();
   test_single_touch_never_enters_two_finger_zoom();
   test_long_press_requires_500_ms_and_less_than_10_dip();
   test_10_dip_cancels_long_press_candidate();
   test_long_press_drag_starts_at_12_dip_and_ends_on_release();
+  test_long_press_drag_uses_movement_after_confirmation();
+  test_release_before_long_press_cleans_up_without_drag_action();
+  test_release_after_long_press_before_drag_cleans_up_without_drag_action();
   test_pre_long_press_move_uses_normal_swipe();
   test_navigation_requires_80_horizontal_dip_and_under_30_vertical_dip();
   test_navigation_rejects_30_vertical_dip();
