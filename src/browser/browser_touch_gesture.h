@@ -6,9 +6,18 @@
 namespace offscreen {
 
 struct TouchPointSnapshot {
+  TouchPointSnapshot() = default;
+  TouchPointSnapshot(int id_value, int x_value, int y_value,
+                     bool pressed_value)
+      : TouchPointSnapshot(id_value, static_cast<double>(x_value),
+                           static_cast<double>(y_value), pressed_value) {}
+  TouchPointSnapshot(int id_value, double x_value, double y_value,
+                     bool pressed_value)
+      : id(id_value), x(x_value), y(y_value), pressed(pressed_value) {}
+
   int id = 0;
-  int x = 0;
-  int y = 0;
+  double x = 0.0;
+  double y = 0.0;
   bool pressed = false;
 };
 
@@ -66,12 +75,12 @@ class TouchGestureStateMachine {
   TouchGestureThresholds thresholds_;
   TouchGestureState state_ = TouchGestureState::kIdle;
   int primary_id_ = 0;
-  int start_x_ = 0;
-  int start_y_ = 0;
-  int recent_x_ = 0;
-  int recent_y_ = 0;
-  int long_press_x_ = 0;
-  int long_press_y_ = 0;
+  double start_x_ = 0.0;
+  double start_y_ = 0.0;
+  double recent_x_ = 0.0;
+  double recent_y_ = 0.0;
+  double long_press_x_ = 0.0;
+  double long_press_y_ = 0.0;
   int64_t start_timestamp_ms_ = 0;
   double initial_two_finger_distance_ = 0.0;
   double scale_factor_ = 1.0;

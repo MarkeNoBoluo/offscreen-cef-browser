@@ -68,6 +68,21 @@ void test_single_touch_enters_normal_swipe_at_15_dip() {
                "15 DIP state");
 }
 
+void test_fractional_dip_positions_preserve_thresholds() {
+  TouchGestureStateMachine machine;
+
+  expect_action(machine.Update({TouchPointSnapshot{1, 0.25, 0.0, true}}, 0),
+                TouchGestureAction::kNone, "fractional touch start");
+  expect_action(machine.Update({TouchPointSnapshot{1, 15.0, 0.0, true}}, 10),
+                TouchGestureAction::kNone, "14.75 DIP action");
+  expect_state(machine.state(), TouchGestureState::kSingleTouchCandidate,
+               "14.75 DIP state");
+  expect_action(machine.Update({TouchPointSnapshot{1, 15.25, 0.0, true}}, 20),
+                TouchGestureAction::kNone, "15 DIP action");
+  expect_state(machine.state(), TouchGestureState::kNormalSwipe,
+               "15 DIP state");
+}
+
 void test_equal_displacement_is_vertical_swipe() {
   TouchGestureStateMachine machine;
   begin_single_touch(machine);
@@ -318,6 +333,7 @@ void test_lost_second_touch_cancels_two_finger_sequence() {
 
 int main() {
   test_single_touch_enters_normal_swipe_at_15_dip();
+  test_fractional_dip_positions_preserve_thresholds();
   test_equal_displacement_is_vertical_swipe();
   test_two_finger_distance_change_enters_zoom_at_20_dip();
   test_scale_factor_is_clamped_to_configured_bounds();

@@ -203,6 +203,7 @@ class BrowserWidget final : public QOpenGLWidget {
   void CancelCefDragging();
   std::vector<TouchPointSnapshot> TouchSnapshots(
       const QTouchEvent* event) const;
+  void SuppressCefTouchSequence(bool cancel_gesture = true);
   void CancelTouchSequence();
   void BeginTouchDragging(const QPoint& position);
   void UpdateTouchDragging(const QPoint& position);
@@ -225,7 +226,7 @@ class BrowserWidget final : public QOpenGLWidget {
   bool cef_drag_source_active_ = false;
   bool cef_drag_target_active_ = false;
   bool touch_drag_active_ = false;
-  bool touch_navigation_sent_ = false;
+  bool touch_forwarding_suppressed_ = false;
   int touch_sequence_primary_id_ = -1;
   TouchGestureStateMachine touch_gesture_;
   CefRefPtr<CefDragData> cef_drag_data_;

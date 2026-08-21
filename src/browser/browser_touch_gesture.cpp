@@ -32,8 +32,7 @@ const TouchPointSnapshot* FindSecondPressedPoint(
 
 double Distance(const TouchPointSnapshot& first,
                 const TouchPointSnapshot& second) {
-  return std::hypot(static_cast<double>(second.x - first.x),
-                    static_cast<double>(second.y - first.y));
+  return std::hypot(second.x - first.x, second.y - first.y);
 }
 
 }  // namespace
@@ -113,10 +112,9 @@ TouchGestureAction TouchGestureStateMachine::Update(
     return TouchGestureAction::kCancel;
   }
 
-  const int delta_x = primary->x - start_x_;
-  const int delta_y = primary->y - start_y_;
-  const double movement = std::hypot(static_cast<double>(delta_x),
-                                     static_cast<double>(delta_y));
+  const double delta_x = primary->x - start_x_;
+  const double delta_y = primary->y - start_y_;
+  const double movement = std::hypot(delta_x, delta_y);
 
   if (state_ == TouchGestureState::kSingleTouchCandidate) {
     if (movement >= thresholds_.swipe_start_dip) {
@@ -138,9 +136,8 @@ TouchGestureAction TouchGestureStateMachine::Update(
   }
 
   if (state_ == TouchGestureState::kLongPressCandidate) {
-    const double drag_movement = std::hypot(
-        static_cast<double>(primary->x - long_press_x_),
-        static_cast<double>(primary->y - long_press_y_));
+    const double drag_movement = std::hypot(primary->x - long_press_x_,
+                                            primary->y - long_press_y_);
     if (drag_movement >= thresholds_.drag_start_dip) {
       state_ = TouchGestureState::kLongPressDrag;
       recent_x_ = primary->x;
