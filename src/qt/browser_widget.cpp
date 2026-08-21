@@ -1233,22 +1233,6 @@ void BrowserWidget::touchEvent(QTouchEvent* event) {
       }
       active_touch_points_[point.id()] = snapshot;
     }
-
-    if (touch_forwarding_suppressed_ ||
-        state == QEventPoint::State::Stationary ||
-        (state == QEventPoint::State::Released && !was_active)) {
-      continue;
-    }
-
-    const QPointF position = point.position();
-    const QSizeF diameters = point.ellipseDiameters();
-    browser_service_->SendTouchEvent(
-        point.id(), static_cast<float>(position.x()),
-        static_cast<float>(position.y()), CefTouchType(state),
-        static_cast<int>(event->modifiers()),
-        static_cast<float>(std::max<qreal>(0.0, diameters.width() / 2.0)),
-        static_cast<float>(std::max<qreal>(0.0, diameters.height() / 2.0)),
-        static_cast<float>(std::max<qreal>(0.0, point.pressure())));
   }
 
   QPoint gesture_position;
@@ -1292,6 +1276,28 @@ void BrowserWidget::touchEvent(QTouchEvent* event) {
         break;
       case TouchGestureAction::kNone:
         break;
+    }
+  }
+
+  if (!touch_forwarding_suppressed_) {
+    for (const QEventPoint& point : points) {
+      const QEventPoint::State state = point.state();
+      if (state == QEventPoint::State::Stationary ||
+          (state == QEventPoint::State::Released &&
+           active_touch_points_.find(point.id()) ==
+               active_touch_points_.end())) {
+        continue;
+      }
+
+      const QPointF position = point.position();
+      const QSizeF diameters = point.ellipseDiameters();
+      browser_service_->SendTouchEvent(
+          point.id(), static_cast<float>(position.x()),
+          static_cast<float>(position.y()), CefTouchType(state),
+          static_cast<int>(event->modifiers()),
+          static_cast<float>(std::max<qreal>(0.0, diameters.width() / 2.0)),
+          static_cast<float>(std::max<qreal>(0.0, diameters.height() / 2.0)),
+          static_cast<float>(std::max<qreal>(0.0, point.pressure())));
     }
   }
 
