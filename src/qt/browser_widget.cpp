@@ -106,6 +106,18 @@ CefRenderHandler::DragOperation PreferredDragOperation(
   return DRAG_OPERATION_NONE;
 }
 
+bool IgnoreSyntheticMouseEvent(const char* handler, QMouseEvent* event) {
+  if (ShouldForwardQtMouseEvent(static_cast<int>(event->source()))) {
+    return false;
+  }
+
+  DiagnosticLog(std::string("BrowserWidget::") + handler +
+                " ignored synthesized mouse source=" +
+                std::to_string(static_cast<int>(event->source())));
+  event->accept();
+  return true;
+}
+
 }  // namespace
 
 // --- IME composition message handler ---
@@ -929,6 +941,10 @@ void BrowserWidget::paintGL() {
 }
 
 void BrowserWidget::mousePressEvent(QMouseEvent* event) {
+  if (IgnoreSyntheticMouseEvent("mousePressEvent", event)) {
+    return;
+  }
+
   last_mouse_pos_ = event->pos();
   if (browser_service_) {
     browser_service_->SendMouseClickEvent(
@@ -940,6 +956,10 @@ void BrowserWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void BrowserWidget::mouseReleaseEvent(QMouseEvent* event) {
+  if (IgnoreSyntheticMouseEvent("mouseReleaseEvent", event)) {
+    return;
+  }
+
   last_mouse_pos_ = event->pos();
   if (cef_drag_source_active_) {
     FinishCefDragging(event->pos(), static_cast<int>(event->buttons()),
@@ -958,6 +978,10 @@ void BrowserWidget::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void BrowserWidget::mouseMoveEvent(QMouseEvent* event) {
+  if (IgnoreSyntheticMouseEvent("mouseMoveEvent", event)) {
+    return;
+  }
+
   last_mouse_pos_ = event->pos();
   if (cef_drag_source_active_) {
     if (rect().contains(event->pos())) {
@@ -987,6 +1011,10 @@ void BrowserWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void BrowserWidget::mouseDoubleClickEvent(QMouseEvent* event) {
+  if (IgnoreSyntheticMouseEvent("mouseDoubleClickEvent", event)) {
+    return;
+  }
+
   if (browser_service_) {
     browser_service_->SendMouseClickEvent(
         event->pos().x(), event->pos().y(),
