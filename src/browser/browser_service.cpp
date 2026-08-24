@@ -545,6 +545,44 @@ void BrowserService::SendMouseWheelEvent(int x, int y,
   browser_->GetHost()->SendMouseWheelEvent(mouse_event, delta_x, delta_y);
 }
 
+void BrowserService::SendTouchEvent(int id,
+                                    float x,
+                                    float y,
+                                    int touch_type,
+                                    int qt_modifiers,
+                                    float radius_x,
+                                    float radius_y,
+                                    float pressure) {
+  if (!browser_) return;
+
+  CefRefPtr<CefBrowserHost> host = browser_->GetHost();
+  if (!host) return;
+
+  switch (touch_type) {
+    case CEF_TET_PRESSED:
+    case CEF_TET_MOVED:
+    case CEF_TET_RELEASED:
+    case CEF_TET_CANCELLED:
+      break;
+    default:
+      return;
+  }
+
+  CefTouchEvent touch_event{};
+  touch_event.id = id;
+  touch_event.x = x;
+  touch_event.y = y;
+  touch_event.radius_x = radius_x;
+  touch_event.radius_y = radius_y;
+  touch_event.rotation_angle = 0.0f;
+  touch_event.pressure = pressure;
+  touch_event.type = static_cast<cef_touch_event_type_t>(touch_type);
+  touch_event.modifiers = MapQtModifiersToCefEventFlags(qt_modifiers);
+  touch_event.pointer_type = CEF_POINTER_TYPE_TOUCH;
+
+  host->SendTouchEvent(touch_event);
+}
+
 void BrowserService::SendDragTargetDragEnter(CefRefPtr<CefDragData> drag_data,
                                              int x, int y, int qt_buttons,
                                              int qt_modifiers,

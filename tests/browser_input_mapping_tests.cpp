@@ -18,6 +18,11 @@ constexpr int kQtLeftButton = 0x00000001;
 constexpr int kQtRightButton = 0x00000002;
 constexpr int kQtMiddleButton = 0x00000004;
 
+constexpr int kQtMouseEventNotSynthesized = 0;
+constexpr int kQtMouseEventSynthesizedBySystem = 1;
+constexpr int kQtMouseEventSynthesizedByQt = 2;
+constexpr int kQtMouseEventSynthesizedByApplication = 3;
+
 void expect_eq(uint32_t actual, uint32_t expected, const char* label) {
   if (actual != expected) {
     std::cerr << label << " expected [" << expected << "] but got [" << actual
@@ -174,6 +179,26 @@ void test_mouse_buttons_all_three() {
   expect_eq(result, expected, "mouse_buttons_all");
 }
 
+// --- ShouldForwardQtMouseEvent tests ---
+
+void test_real_mouse_events_are_forwarded() {
+  expect_eq_bool(offscreen::ShouldForwardQtMouseEvent(
+                     kQtMouseEventNotSynthesized),
+                 true, "real mouse event forwarded");
+}
+
+void test_synthesized_mouse_events_are_not_forwarded() {
+  expect_eq_bool(offscreen::ShouldForwardQtMouseEvent(
+                     kQtMouseEventSynthesizedBySystem),
+                 false, "system synthesized mouse event ignored");
+  expect_eq_bool(offscreen::ShouldForwardQtMouseEvent(
+                     kQtMouseEventSynthesizedByQt),
+                 false, "qt synthesized mouse event ignored");
+  expect_eq_bool(offscreen::ShouldForwardQtMouseEvent(
+                     kQtMouseEventSynthesizedByApplication),
+                 false, "application synthesized mouse event ignored");
+}
+
 // --- Windows key native code tests ---
 
 void test_extended_virtual_key_false_for_letters() {
@@ -238,6 +263,8 @@ int main() {
   test_mouse_buttons_middle();
   test_mouse_buttons_left_and_right();
   test_mouse_buttons_all_three();
+  test_real_mouse_events_are_forwarded();
+  test_synthesized_mouse_events_are_not_forwarded();
 
   // Windows key native code
   test_extended_virtual_key_false_for_letters();

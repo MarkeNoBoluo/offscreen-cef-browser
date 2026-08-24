@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Touch Gesture Acceptance</title>
+<style>
+  :root {
+    color-scheme: light;
+    font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    --bg: #f4f7fa;
+    --panel: #ffffff;
+    --ink: #1e2329;
+    --muted: #5f6b7a;
+    --line: #cfd7e2;
+    --blue: #1e6bd6;
+    --green: #16794c;
+    --red: #b3261e;
+    --amber: #8a5a00;
+    --violet: #6c3fb5;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+  }
+
+  header {
+    padding: 16px 22px;
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 650;
+  }
+
+  .subtitle {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 16px;
+    padding: 16px 22px 24px;
+  }
+
+  .tests {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+    gap: 14px;
+  }
+
+  section,
+  aside {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+
+  section {
+    min-height: 260px;
+    padding: 14px;
+  }
+
+  h2 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 650;
+  }
+
+  .spec {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .zone {
+    position: relative;
+    min-height: 160px;
+    overflow: hidden;
+    border: 2px solid #9fb3c8;
+    border-radius: 6px;
+    background:
+      linear-gradient(90deg, rgba(30, 107, 214, 0.09) 1px, transparent 1px),
+      linear-gradient(rgba(30, 107, 214, 0.09) 1px, transparent 1px),
+      #fbfdff;
+    background-size: 20px 20px;
+    user-select: none;
+  }
+
+  .zone:focus {
+    outline: 3px solid rgba(30, 107, 214, 0.28);
+    outline-offset: 2px;
+  }
+
+  .zone-label {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    padding: 3px 7px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .metric {
+    min-height: 52px;
+    margin-top: 10px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    background: #f9fbfd;
+    color: #2f3945;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-line;
+  }
+
+  .scroll-area {
+    height: 170px;
+    overflow: auto;
+    padding: 10px;
+    border: 2px solid #9fb3c8;
+    border-radius: 6px;
+    background: #fff;
+    touch-action: pan-y;
+  }
+
+  .scroll-strip {
+    display: grid;
+    gap: 8px;
+  }
+
+  .scroll-row {
+    min-height: 42px;
+    padding: 10px;
+    border: 1px solid #d8e1ec;
+    background: #f7fbff;
+  }
+
+  #pinch-zone,
+  #long-press-zone,
+  #drag-zone {
+    touch-action: none;
+  }
+
+  #history-zone {
+    touch-action: pan-y;
+  }
+
+  .pinch-target {
+    position: absolute;
+    left: calc(50% - 45px);
+    top: calc(50% - 45px);
+    width: 90px;
+    height: 90px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #1e6bd6;
+    color: #fff;
+    font-weight: 650;
+    transform-origin: center;
+  }
+
+  .press-target,
+  .drag-target {
+    position: absolute;
+    left: calc(50% - 44px);
+    top: calc(50% - 44px);
+    width: 88px;
+    height: 88px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    background: #16794c;
+    color: #fff;
+    font-weight: 650;
+  }
+
+  .drag-target {
+    background: #6c3fb5;
+  }
+
+  .history-stack {
+    position: absolute;
+    inset: 48px 14px 14px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .history-page {
+    display: grid;
+    place-items: center;
+    border: 1px solid #b8c4d2;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--muted);
+    font-weight: 650;
+  }
+
+  .history-page.active {
+    border-color: var(--blue);
+    background: #eaf2ff;
+    color: var(--blue);
+  }
+
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  button {
+    min-height: 32px;
+    padding: 5px 10px;
+    border: 1px solid #9aa8b8;
+    border-radius: 4px;
+    background: #fff;
+    color: var(--ink);
+    font: inherit;
+  }
+
+  button:active {
+    transform: translateY(1px);
+  }
+
+  aside {
+    position: sticky;
+    top: 12px;
+    align-self: start;
+    max-height: calc(100vh - 24px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tile {
+    min-height: 58px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: #fbfcfe;
+  }
+
+  .tile strong {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .tile span {
+    display: block;
+    margin-top: 5px;
+    font-size: 18px;
+    font-weight: 650;
+  }
+
+  .log-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .log-head h2 {
+    margin: 0;
+  }
+
+  #event-log {
+    flex: 1;
+    min-height: 300px;
+    overflow: auto;
+    padding: 10px 12px;
+    background: #101820;
+    color: #e8eef7;
+    font: 12px Consolas, "Courier New", monospace;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+
+  .pass {
+    color: var(--green);
+  }
+
+  .warn {
+    color: var(--amber);
+  }
+
+  .fail {
+    color: var(--red);
+  }
+
+  @media (max-width: 980px) {
+    main {
+      grid-template-columns: 1fr;
+    }
+
+    .tests {
+      grid-template-columns: 1fr;
+    }
+
+    aside {
+      position: static;
+      max-height: none;
+    }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>触摸屏手势验收页</h1>
+  <div class="subtitle">CSS 像素即浏览器逻辑坐标 DIP。请在真实触摸屏上操作，本页只记录事件和阈值，不自动代表验收通过。</div>
+</header>
+
+<main>
+  <div class="tests">
+    <section>
+      <h2>1. 单指滑动 / 滚动</h2>
+      <p class="spec">验收点：移动 15 DIP 后应进入滑动；垂直滚动不应触发历史导航。</p>
+      <div id="single-swipe-zone" class="scroll-area" tabindex="0">
+        <div class="scroll-strip">
+          <div class="scroll-row">从这里开始单指上滑或下滑。</div>
+          <div class="scroll-row">观察 scrollTop 和 pointer 位移。</div>
+          <div class="scroll-row">小于 15 DIP 应更像点击/轻触。</div>
+          <div class="scroll-row">大幅垂直滑动不应触发后退/前进。</div>
+          <div class="scroll-row">滚动项目 5</div>
+          <div class="scroll-row">滚动项目 6</div>
+          <div class="scroll-row">滚动项目 7</div>
+          <div class="scroll-row">滚动项目 8</div>
+        </div>
+      </div>
+      <div id="single-metric" class="metric">等待单指滑动。</div>
+    </section>
+
+    <section>
+      <h2>2. 双指缩放</h2>
+      <p class="spec">验收点：双指距离变化 20 DIP 后进入缩放；倍率应限制在 0.5 到 3.0。</p>
+      <div id="pinch-zone" class="zone" tabindex="0">
+        <div class="zone-label">双指捏合 / 张开</div>
+        <div id="pinch-target" class="pinch-target">1.00x</div>
+      </div>
+      <div id="pinch-metric" class="metric">等待双指触摸。</div>
+    </section>
+
+    <section>
+      <h2>3. 长按</h2>
+      <p class="spec">验收点：按住 500ms 且移动小于 10 DIP；提前抬起或移动达到 10 DIP 应取消。</p>
+      <div id="long-press-zone" class="zone" tabindex="0">
+        <div class="zone-label">按住绿色区域</div>
+        <div id="press-target" class="press-target">长按</div>
+      </div>
+      <div id="long-press-metric" class="metric">等待长按。</div>
+    </section>
+
+    <section>
+      <h2>4. 长按拖拽</h2>
+      <p class="spec">验收点：长按成功后继续移动 12 DIP 开始拖拽；抬起结束拖拽。</p>
+      <div id="drag-zone" class="zone" tabindex="0">
+        <div class="zone-label">先长按紫色块，再拖动</div>
+        <div id="drag-target" class="drag-target">拖拽</div>
+      </div>
+      <div id="drag-metric" class="metric">等待长按拖拽。</div>
+    </section>
+
+    <section>
+      <h2>5. 左右滑历史导航</h2>
+      <p class="spec">验收点：水平 80 DIP 且垂直小于 30 DIP；左到右后退，右到左前进。</p>
+      <div id="history-zone" class="zone" tabindex="0">
+        <div class="zone-label">在此区域横向滑动</div>
+        <div class="history-stack">
+          <div class="history-page" data-page="1">Page 1</div>
+          <div class="history-page" data-page="2">Page 2</div>
+          <div class="history-page active" data-page="3">Page 3</div>
+        </div>
+      </div>
+      <div class="buttons">
+        <button id="history-reset" type="button">重置历史栈</button>
+        <button id="history-back" type="button">history.back()</button>
+        <button id="history-forward" type="button">history.forward()</button>
+      </div>
+      <div id="history-metric" class="metric">当前 Page 3。横向滑动后观察 popstate 和页面编号。</div>
+    </section>
+  </div>
+
+  <aside>
+    <div class="summary">
+      <div class="tile"><strong>活跃触点</strong><span id="active-count">0</span></div>
+      <div class="tile"><strong>最近事件</strong><span id="last-event">none</span></div>
+      <div class="tile"><strong>总事件数</strong><span id="event-count">0</span></div>
+      <div class="tile"><strong>历史页</strong><span id="history-state">3</span></div>
+    </div>
+    <div class="log-head">
+      <h2>事件日志</h2>
+      <button id="clear-log" type="button">清空</button>
+    </div>
+    <div id="event-log" aria-live="polite"></div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  const activePointers = new Map();
+  const logEl = document.getElementById('event-log');
+  const activeCountEl = document.getElementById('active-count');
+  const lastEventEl = document.getElementById('last-event');
+  const eventCountEl = document.getElementById('event-count');
+  let eventCount = 0;
+
+  function now() {
+    return performance.now();
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function distance(a, b) {
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  }
+
+  function updateSummary(type) {
+    activeCountEl.textContent = String(activePointers.size);
+    lastEventEl.textContent = type;
+    eventCountEl.textContent = String(eventCount);
+  }
+
+  function log(type, detail) {
+    eventCount += 1;
+    const line = '[' + new Date().toLocaleTimeString() + '] ' + type + '  ' + detail;
+    logEl.textContent = line + '\n' + logEl.textContent;
+    updateSummary(type);
+  }
+
+  function pointFromEvent(event) {
+    return {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      time: now(),
+      type: event.pointerType || 'unknown'
+    };
+  }
+
+  function beginPointer(event) {
+    const point = pointFromEvent(event);
+    activePointers.set(point.id, point);
+    log('pointerdown', 'id=' + point.id + ' type=' + point.type +
+        ' x=' + point.x.toFixed(1) + ' y=' + point.y.toFixed(1));
+    return point;
+  }
+
+  function updatePointer(event) {
+    const start = activePointers.get(event.pointerId);
+    const current = pointFromEvent(event);
+    if (!start) {
+      return { start: current, current, dx: 0, dy: 0, move: 0, elapsed: 0 };
+    }
+    const dx = current.x - start.x;
+    const dy = current.y - start.y;
+    return {
+      start,
+      current,
+      dx,
+      dy,
+      move: Math.hypot(dx, dy),
+      elapsed: current.time - start.time
+    };
+  }
+
+  function endPointer(event) {
+    const tracked = updatePointer(event);
+    activePointers.delete(event.pointerId);
+    log(event.type, 'id=' + event.pointerId + ' dx=' + tracked.dx.toFixed(1) +
+        ' dy=' + tracked.dy.toFixed(1) + ' move=' + tracked.move.toFixed(1) +
+        'ms=' + tracked.elapsed.toFixed(0));
+  }
+
+  function wireSingleSwipe() {
+    const zone = document.getElementById('single-swipe-zone');
+    const metric = document.getElementById('single-metric');
+    zone.addEventListener('pointerdown', beginPointer);
+    zone.addEventListener('pointermove', (event) => {
+      if (!activePointers.has(event.pointerId)) return;
+      const tracked = updatePointer(event);
+      const axis = Math.abs(tracked.dx) > Math.abs(tracked.dy) ? '水平' : '垂直';
+      const threshold = tracked.move >= 15 ? '达到 15 DIP' : '未到 15 DIP';
+      metric.textContent = 'dx=' + tracked.dx.toFixed(1) +
+        ' DIP, dy=' + tracked.dy.toFixed(1) + ' DIP\nmove=' +
+        tracked.move.toFixed(1) + ' DIP, ' + axis + ', ' + threshold +
+        '\nscrollTop=' + zone.scrollTop;
+    });
+    zone.addEventListener('scroll', () => {
+      log('scroll', 'single zone scrollTop=' + zone.scrollTop);
+    });
+    zone.addEventListener('pointerup', endPointer);
+    zone.addEventListener('pointercancel', endPointer);
+  }
+
+  function wirePinch() {
+    const zone = document.getElementById('pinch-zone');
+    const target = document.getElementById('pinch-target');
+    const metric = document.getElementById('pinch-metric');
+    const touches = new Map();
+    let initialDistance = 0;
+    let baseScale = 1;
+    let currentScale = 1;
+
+    function render(scale) {
+      currentScale = clamp(scale, 0.5, 3.0);
+      target.style.transform = 'scale(' + currentScale.toFixed(3) + ')';
+      target.textContent = currentScale.toFixed(2) + 'x';
+    }
+
+    function updatePinch() {
+      if (touches.size !== 2) return;
+      const points = Array.from(touches.values());
+      const currentDistance = distance(points[0], points[1]);
+      if (initialDistance <= 0) {
+        initialDistance = currentDistance;
+        return;
+      }
+      const delta = currentDistance - initialDistance;
+      const active = Math.abs(delta) >= 20;
+      if (active) {
+        render(baseScale * (currentDistance / initialDistance));
+      }
+      metric.textContent = '初始距离=' + initialDistance.toFixed(1) +
+        ' DIP\n当前距离=' + currentDistance.toFixed(1) +
+        ' DIP\n变化=' + delta.toFixed(1) + ' DIP, ' +
+        (active ? '达到 20 DIP' : '未到 20 DIP') +
+        '\n倍率=' + currentScale.toFixed(2) + ' (限制 0.5..3.0)';
+    }
+
+    zone.addEventListener('pointerdown', (event) => {
+      zone.setPointerCapture(event.pointerId);
+      const point = pointFromEvent(event);
+      touches.set(event.pointerId, point);
+      beginPointer(event);
+      if (touches.size === 2) {
+        const points = Array.from(touches.values());
+        initialDistance = distance(points[0], points[1]);
+        baseScale = currentScale;
+        log('pinch-start', 'distance=' + initialDistance.toFixed(1));
+      }
+    });
+    zone.addEventListener('pointermove', (event) => {
+      if (!touches.has(event.pointerId)) return;
+      touches.set(event.pointerId, pointFromEvent(event));
+      updatePinch();
+    });
+    function finish(event) {
+      touches.delete(event.pointerId);
+      if (touches.size < 2) {
+        initialDistance = 0;
+        baseScale = currentScale;
+      }
+      endPointer(event);
+    }
+    zone.addEventListener('pointerup', finish);
+    zone.addEventListener('pointercancel', finish);
+  }
+
+  function wireLongPress() {
+    const zone = document.getElementById('long-press-zone');
+    const target = document.getElementById('press-target');
+    const metric = document.getElementById('long-press-metric');
+    let timer = null;
+    let confirmed = false;
+    let start = null;
+
+    function reset(color) {
+      clearTimeout(timer);
+      timer = null;
+      confirmed = false;
+      target.style.background = color || '#16794c';
+    }
+
+    zone.addEventListener('pointerdown', (event) => {
+      zone.setPointerCapture(event.pointerId);
+      start = beginPointer(event);
+      confirmed = false;
+      target.style.background = '#8a5a00';
+      metric.textContent = '计时中：500ms 内移动必须小于 10 DIP。';
+      timer = setTimeout(() => {
+        confirmed = true;
+        target.style.background = '#1e6bd6';
+        metric.textContent = '长按成立：500ms 已到，继续保持或抬起。';
+        log('long-press', 'confirmed at 500ms');
+      }, 500);
+    });
+    zone.addEventListener('pointermove', (event) => {
+      if (!start) return;
+      const tracked = updatePointer(event);
+      const ok = tracked.move < 10;
+      metric.textContent = 'elapsed=' + tracked.elapsed.toFixed(0) +
+        'ms\nmove=' + tracked.move.toFixed(1) + ' DIP, ' +
+        (ok ? '小于 10 DIP' : '达到 10 DIP，取消长按');
+      if (!ok && !confirmed) {
+        reset('#b3261e');
+        log('long-press-cancel', 'move=' + tracked.move.toFixed(1));
+      }
+    });
+    function finish(event) {
+      const tracked = updatePointer(event);
+      metric.textContent = confirmed
+        ? '长按后抬起：elapsed=' + tracked.elapsed.toFixed(0) + 'ms'
+        : '未成立：elapsed=' + tracked.elapsed.toFixed(0) +
+          'ms, move=' + tracked.move.toFixed(1) + ' DIP';
+      reset();
+      start = null;
+      endPointer(event);
+    }
+    zone.addEventListener('pointerup', finish);
+    zone.addEventListener('pointercancel', finish);
+  }
+
+  function wireDrag() {
+    const zone = document.getElementById('drag-zone');
+    const target = document.getElementById('drag-target');
+    const metric = document.getElementById('drag-metric');
+    let start = null;
+    let pressPoint = null;
+    let latestPoint = null;
+    let longPressReady = false;
+    let dragging = false;
+    let timer = null;
+    let left = 0;
+    let top = 0;
+
+    function applyPosition(x, y) {
+      const rect = zone.getBoundingClientRect();
+      left = clamp(x - rect.left - 44, 0, rect.width - 88);
+      top = clamp(y - rect.top - 44, 0, rect.height - 88);
+      target.style.left = left + 'px';
+      target.style.top = top + 'px';
+    }
+
+    function reset() {
+      clearTimeout(timer);
+      timer = null;
+      start = null;
+      pressPoint = null;
+      latestPoint = null;
+      longPressReady = false;
+      dragging = false;
+      target.style.background = '#6c3fb5';
+    }
+
+    zone.addEventListener('pointerdown', (event) => {
+      zone.setPointerCapture(event.pointerId);
+      start = beginPointer(event);
+      latestPoint = pointFromEvent(event);
+      pressPoint = null;
+      longPressReady = false;
+      dragging = false;
+      target.style.background = '#8a5a00';
+      timer = setTimeout(() => {
+        pressPoint = latestPoint || pointFromEvent(event);
+        longPressReady = true;
+        target.style.background = '#1e6bd6';
+        metric.textContent = '长按成立。继续移动 12 DIP 开始拖拽。';
+        log('drag-ready', 'long press confirmed');
+      }, 500);
+    });
+    zone.addEventListener('pointermove', (event) => {
+      if (!start) return;
+      const current = pointFromEvent(event);
+      latestPoint = current;
+      const fromStart = Math.hypot(current.x - start.x, current.y - start.y);
+      if (!longPressReady && fromStart >= 10) {
+        metric.textContent = '长按前移动达到 10 DIP，取消拖拽候选。';
+        reset();
+        log('drag-cancel', 'pre-long-press move=' + fromStart.toFixed(1));
+        return;
+      }
+      if (longPressReady && pressPoint && !dragging) {
+        const dragMove = Math.hypot(current.x - pressPoint.x, current.y - pressPoint.y);
+        metric.textContent = '长按后移动=' + dragMove.toFixed(1) +
+          ' DIP，' + (dragMove >= 12 ? '开始拖拽' : '未到 12 DIP');
+        if (dragMove >= 12) {
+          dragging = true;
+          target.style.background = '#16794c';
+          log('drag-start', 'moveAfterLongPress=' + dragMove.toFixed(1));
+        }
+      }
+      if (dragging) {
+        applyPosition(current.x, current.y);
+        metric.textContent = '拖拽中：left=' + left.toFixed(0) +
+          ', top=' + top.toFixed(0);
+      }
+    });
+    function finish(event) {
+      metric.textContent = dragging ? '拖拽结束 / drop。' : '未进入拖拽。';
+      reset();
+      endPointer(event);
+    }
+    zone.addEventListener('pointerup', finish);
+    zone.addEventListener('pointercancel', finish);
+  }
+
+  function wireTouchEventEcho() {
+    if (!('TouchEvent' in window)) {
+      log('touch-api', 'TouchEvent is not exposed; rely on PointerEvent logs');
+      return;
+    }
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((type) => {
+      document.addEventListener(type, (event) => {
+        const changed = Array.from(event.changedTouches || []).map((touch) => {
+          return '#' + touch.identifier + '(' +
+            touch.clientX.toFixed(1) + ',' + touch.clientY.toFixed(1) + ')';
+        }).join(' ');
+        log(type, 'touches=' + event.touches.length +
+          ' changed=' + event.changedTouches.length + ' ' + changed);
+      }, { passive: true });
+    });
+  }
+
+  function wireHistory() {
+    const zone = document.getElementById('history-zone');
+    const metric = document.getElementById('history-metric');
+    const stateEl = document.getElementById('history-state');
+    let page = 3;
+
+    function setPage(nextPage, replace) {
+      page = clamp(nextPage, 1, 3);
+      document.querySelectorAll('.history-page').forEach((el) => {
+        el.classList.toggle('active', Number(el.dataset.page) === page);
+      });
+      stateEl.textContent = String(page);
+      metric.textContent = '当前 Page ' + page +
+        '。左到右应触发后退，右到左应触发前进。';
+      const state = { page };
+      const url = '#page-' + page;
+      if (replace) {
+        history.replaceState(state, '', url);
+      } else {
+        history.pushState(state, '', url);
+      }
+    }
+
+    function resetHistory() {
+      history.replaceState({ page: 1 }, '', '#page-1');
+      history.pushState({ page: 2 }, '', '#page-2');
+      history.pushState({ page: 3 }, '', '#page-3');
+      setPage(3, true);
+      log('history-reset', 'stack seeded as page 1 -> 2 -> 3');
+    }
+
+    zone.addEventListener('pointerdown', beginPointer);
+    zone.addEventListener('pointermove', (event) => {
+      if (!activePointers.has(event.pointerId)) return;
+      const tracked = updatePointer(event);
+      const navReady = Math.abs(tracked.dx) >= 80 && Math.abs(tracked.dy) < 30;
+      metric.textContent = 'dx=' + tracked.dx.toFixed(1) +
+        ' DIP, dy=' + tracked.dy.toFixed(1) +
+        ' DIP\n水平阈值=' + (Math.abs(tracked.dx) >= 80 ? '达到' : '未到') +
+        '，垂直限制=' + (Math.abs(tracked.dy) < 30 ? '通过' : '超出') +
+        '\n' + (navReady ? (tracked.dx > 0 ? '预期：后退' : '预期：前进') : '继续横向滑动');
+    });
+    zone.addEventListener('pointerup', endPointer);
+    zone.addEventListener('pointercancel', endPointer);
+    window.addEventListener('popstate', (event) => {
+      if (event.state && typeof event.state.page === 'number') {
+        page = event.state.page;
+        document.querySelectorAll('.history-page').forEach((el) => {
+          el.classList.toggle('active', Number(el.dataset.page) === page);
+        });
+        stateEl.textContent = String(page);
+        metric.textContent = '收到 popstate：当前 Page ' + page;
+        log('popstate', 'page=' + page);
+      }
+    });
+    document.getElementById('history-reset').addEventListener('click', resetHistory);
+    document.getElementById('history-back').addEventListener('click', () => history.back());
+    document.getElementById('history-forward').addEventListener('click', () => history.forward());
+    resetHistory();
+  }
+
+  document.getElementById('clear-log').addEventListener('click', () => {
+    logEl.textContent = '';
+    eventCount = 0;
+    updateSummary('cleared');
+  });
+
+  wireSingleSwipe();
+  wirePinch();
+  wireLongPress();
+  wireDrag();
+  wireHistory();
+  wireTouchEventEcho();
+  log('ready', 'touch gesture acceptance page loaded');
+})();
+</script>
+</body>
+</html>
