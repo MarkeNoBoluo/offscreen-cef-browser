@@ -2,11 +2,20 @@
 <html lang="zh-CN">
 <meta charset="utf-8">
 <title>Download confirmation test</title>
-<button onclick="downloadFile('alpha.txt', 'alpha')">下载 alpha.txt</button>
-<button onclick="downloadFile('beta.txt', 'beta')">下载 beta.txt</button>
-<button onclick="downloadBoth()">连续下载两个文件</button>
-<button onclick="openPopupDownload()">弹窗下载 alpha.txt</button>
+<div id="main-page">
+  <button onclick="downloadFile('alpha.txt', 'alpha')">下载 alpha.txt</button>
+  <button onclick="downloadFile('beta.txt', 'beta')">下载 beta.txt</button>
+  <button onclick="downloadBoth()">连续下载两个文件</button>
+  <button onclick="openPopupDownload()">弹窗下载 alpha.txt</button>
+</div>
+<div id="popup-page" hidden>
+  <button onclick="downloadFile('popup-alpha.txt', 'popup alpha')">下载 popup-alpha.txt</button>
+</div>
 <script>
+  const isPopupPage = new URLSearchParams(location.search).has('popup');
+  document.getElementById('main-page').hidden = isPopupPage;
+  document.getElementById('popup-page').hidden = !isPopupPage;
+
   function downloadFile(name, text) {
     const url = URL.createObjectURL(new Blob([text], {type: 'text/plain'}));
     const link = document.createElement('a');
@@ -20,21 +29,7 @@
     downloadFile('beta.txt', 'beta');
   }
   function openPopupDownload() {
-    const popupPage = `<!doctype html><meta charset="utf-8">
-      <button onclick="downloadFile()">下载 popup-alpha.txt</button>
-      <script>
-        function downloadFile() {
-          const url = URL.createObjectURL(new Blob(['popup alpha'], {type: 'text/plain'}));
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = 'popup-alpha.txt';
-          link.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }
-      <\/script>`;
-    const popupUrl = URL.createObjectURL(new Blob([popupPage], {type: 'text/html'}));
-    window.open(popupUrl, '_blank');
-    setTimeout(() => URL.revokeObjectURL(popupUrl), 1000);
+    window.open('download_confirmation_test.html?popup=1', '_blank');
   }
 </script>
 </html>
