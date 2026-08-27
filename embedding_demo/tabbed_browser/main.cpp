@@ -1,6 +1,10 @@
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDialog>
+#include <QFileDialog>
 #include <QMainWindow>
+#include <QPointer>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
 
@@ -11,6 +15,7 @@
 #include "browser/render_stats_log.h"
 #include "offscreen_cef/cef_runtime.h"
 #include "offscreen_cef/cef_tabbed_browser.h"
+#include "offscreen_cef/cef_web_view.h"
 
 namespace {
 
@@ -24,6 +29,33 @@ class TabbedBrowserDemoWindow final : public QMainWindow {
 
     browser_ = new offscreen::CefTabbedBrowser(this);
     setCentralWidget(browser_);
+    connect(browser_, &offscreen::CefTabbedBrowser::downloadRequested, browser_,
+            [](offscreen::CefWebView* view, offscreen::DownloadRequestId id,
+               const QString& suggested_name, const QUrl&) {
+              QPointer<offscreen::CefWebView> guarded_view(view);
+              auto* dialog = new QFileDialog(view);
+              dialog->setAcceptMode(QFileDialog::AcceptSave);
+              dialog->setFileMode(QFileDialog::AnyFile);
+              dialog->setConfirmOverwrite(true);
+              dialog->setDirectory(QStandardPaths::writableLocation(
+                  QStandardPaths::DownloadLocation));
+              dialog->selectFile(suggested_name);
+              dialog->setAttribute(Qt::WA_DeleteOnClose);
+              connect(dialog, &QFileDialog::fileSelected, view,
+                      [guarded_view, id](const QString& path) {
+                        if (guarded_view) {
+                          guarded_view->AcceptDownload(id, path);
+                        }
+                      });
+              connect(dialog, &QDialog::rejected, view, [guarded_view, id]() {
+                if (guarded_view) {
+                  guarded_view->CancelDownload(id);
+                }
+              });
+              dialog->open();
+            });
+    browser_->SetDownloadDecisionMode(
+        offscreen::DownloadDecisionMode::kAskHost);
     connect(browser_, &offscreen::CefTabbedBrowser::currentTitleChanged, this,
             [this](const QString& title) {
               setWindowTitle(title.isEmpty()
