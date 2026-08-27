@@ -37,7 +37,6 @@ class TabbedBrowserDemoWindow final : public QMainWindow {
               auto* dialog = new QFileDialog(view);
               dialog->setAcceptMode(QFileDialog::AcceptSave);
               dialog->setFileMode(QFileDialog::AnyFile);
-              dialog->setConfirmOverwrite(true);
               dialog->setDirectory(QStandardPaths::writableLocation(
                   QStandardPaths::DownloadLocation));
               dialog->selectFile(suggested_name);

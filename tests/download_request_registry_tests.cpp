@@ -67,6 +67,40 @@ void test_reject_all_releases_pending_requests() {
   expect_true(registry.pending_count() == 0, "reject all clears requests");
 }
 
+void test_rejects_empty_callback() {
+  offscreen::DownloadRequestRegistry registry;
+  expect_false(registry.Add(30, {}), "add empty callback");
+  expect_true(registry.pending_count() == 0, "empty callback not stored");
+}
+
+void test_duplicate_add_preserves_original_callback() {
+  offscreen::DownloadRequestRegistry registry;
+  int original_count = 0;
+  int duplicate_count = 0;
+  expect_true(registry.Add(40, [&](const std::wstring&) { ++original_count; }),
+              "add original request");
+  expect_false(registry.Add(40, [&](const std::wstring&) { ++duplicate_count; }),
+               "add duplicate request");
+  expect_true(registry.Accept(40, L"C:\\Downloads\\original.txt"),
+              "accept original request");
+  expect_true(original_count == 1, "original callback retained");
+  expect_true(duplicate_count == 0, "duplicate callback not invoked");
+}
+
+void test_accept_removes_request_before_callback_reentry() {
+  offscreen::DownloadRequestRegistry registry;
+  bool nested_accept_result = true;
+  expect_true(registry.Add(50, [&](const std::wstring&) {
+                nested_accept_result =
+                    registry.Accept(50, L"C:\\Downloads\\nested.txt");
+              }),
+              "add reentrant request");
+  expect_true(registry.Accept(50, L"C:\\Downloads\\outer.txt"),
+              "accept outer request");
+  expect_false(nested_accept_result, "reentrant accept");
+  expect_true(registry.pending_count() == 0, "reentrant request removed");
+}
+
 }  // namespace
 
 int main() {
@@ -74,5 +108,8 @@ int main() {
   test_rejects_without_continuing();
   test_tracks_concurrent_requests_independently();
   test_reject_all_releases_pending_requests();
+  test_rejects_empty_callback();
+  test_duplicate_add_preserves_original_callback();
+  test_accept_removes_request_before_callback_reentry();
   return 0;
 }
