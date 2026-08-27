@@ -2,6 +2,7 @@
 #include <QCloseEvent>
 #include <QDialog>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QMainWindow>
 #include <QPointer>
 #include <QStandardPaths>
@@ -105,6 +106,20 @@ int main(int argc, char* argv[]) {
     return *exit_code;
   }
 
+  QUrl initial_url(QStringLiteral("http://192.168.42.116"));
+  if (argc > 2) {
+    return 2;
+  }
+  if (argc == 2) {
+    const QFileInfo html_file(QString::fromLocal8Bit(argv[1]));
+    const QString suffix = html_file.suffix().toLower();
+    if (!html_file.exists() || !html_file.isFile() ||
+        (suffix != QStringLiteral("html") && suffix != QStringLiteral("htm"))) {
+      return 2;
+    }
+    initial_url = QUrl::fromLocalFile(html_file.absoluteFilePath());
+  }
+
   QApplication app(argc, argv);
   offscreen::CefRuntime runtime;
   if (!runtime.Initialize()) {
@@ -113,7 +128,7 @@ int main(int argc, char* argv[]) {
 
   TabbedBrowserDemoWindow window;
   window.show();
-  window.OpenInitialTab(QUrl(QStringLiteral("http://192.168.42.116")));
+  window.OpenInitialTab(initial_url);
 
   const int result = app.exec();
   return runtime.Shutdown() ? result : 1;
