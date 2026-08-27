@@ -1,8 +1,11 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDebug>
+#include <QDialog>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QMainWindow>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
 
@@ -26,6 +29,27 @@ class WebViewDemoWindow final : public QMainWindow {
 
     view_ = new offscreen::CefWebView(this);
     setCentralWidget(view_);
+    connect(view_, &offscreen::CefWebView::downloadRequested, view_,
+            [view = view_](offscreen::DownloadRequestId id,
+                           const QString& suggested_name, const QUrl&) {
+              auto* dialog = new QFileDialog(view);
+              dialog->setAcceptMode(QFileDialog::AcceptSave);
+              dialog->setFileMode(QFileDialog::AnyFile);
+              dialog->setConfirmOverwrite(true);
+              dialog->setDirectory(QStandardPaths::writableLocation(
+                  QStandardPaths::DownloadLocation));
+              dialog->selectFile(suggested_name);
+              dialog->setAttribute(Qt::WA_DeleteOnClose);
+              connect(dialog, &QFileDialog::fileSelected, view,
+                      [view, id](const QString& path) {
+                        view->AcceptDownload(id, path);
+                      });
+              connect(dialog, &QDialog::rejected, view,
+                      [view, id]() { view->CancelDownload(id); });
+              dialog->open();
+            });
+    view_->SetDownloadDecisionMode(
+        offscreen::DownloadDecisionMode::kAskHost);
     connect(view_, &offscreen::CefWebView::titleChanged, this,
             [this](const QString& title) {
               setWindowTitle(title.isEmpty()
