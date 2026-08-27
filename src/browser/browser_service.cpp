@@ -73,7 +73,9 @@ BrowserService::BrowserService()
                 HexValue(reinterpret_cast<uintptr_t>(frame_.get())));
 }
 
-BrowserService::~BrowserService() = default;
+BrowserService::~BrowserService() {
+  pending_downloads_.RejectAll();
+}
 
 void BrowserService::SetBrowserClosedCallback(
     BrowserClosedCallback browser_closed_callback) {
@@ -226,6 +228,44 @@ void BrowserService::SetDownloadStateChangeCallback(
   download_state_change_callback_ = std::move(callback);
 }
 
+void BrowserService::SetDownloadDecisionMode(DownloadDecisionMode mode) {
+  DiagnosticLog("BrowserService::SetDownloadDecisionMode mode=" +
+                std::to_string(static_cast<int>(mode)));
+  if (download_decision_mode_ == DownloadDecisionMode::kAskHost &&
+      mode != DownloadDecisionMode::kAskHost) {
+    pending_downloads_.RejectAll();
+  }
+  download_decision_mode_ = mode;
+}
+
+void BrowserService::SetDownloadRequestCallback(
+    DownloadRequestCallback callback) {
+  DiagnosticLog("BrowserService::SetDownloadRequestCallback");
+  download_request_callback_ = std::move(callback);
+}
+
+bool BrowserService::AcceptDownload(DownloadRequestId id,
+                                    const std::wstring& full_path) {
+  if (full_path.empty()) {
+    return CancelDownload(id);
+  }
+  const bool accepted = pending_downloads_.Accept(id, full_path);
+  if (!accepted) {
+    DiagnosticLog("BrowserService::AcceptDownload ignored invalid id=" +
+                  std::to_string(id));
+  }
+  return accepted;
+}
+
+bool BrowserService::CancelDownload(DownloadRequestId id) {
+  const bool canceled = pending_downloads_.Reject(id);
+  if (!canceled) {
+    DiagnosticLog("BrowserService::CancelDownload ignored invalid id=" +
+                  std::to_string(id));
+  }
+  return canceled;
+}
+
 void BrowserService::SetContextMenuRequestedCallback(
     ContextMenuRequestedCallback callback) {
   DiagnosticLog("BrowserService::SetContextMenuRequestedCallback");
@@ -322,6 +362,7 @@ void BrowserService::SelectAll() {
 }
 
 bool BrowserService::TryCloseBrowser() {
+  pending_downloads_.RejectAll();
   DiagnosticLog("BrowserService::TryCloseBrowser has_browser=" +
                 std::string(browser_ ? "true" : "false") +
                 " has_client=" + (client_ ? "true" : "false") +
@@ -659,6 +700,7 @@ void BrowserService::OnBrowserClosed(CefRefPtr<CefBrowser> browser) {
     DiagnosticLog("BrowserService::OnBrowserClosed ignored non-current browser");
     return;
   }
+  pending_downloads_.RejectAll();
   browser_ = nullptr;
   client_ = nullptr;
   render_handler_ = nullptr;
@@ -742,21 +784,52 @@ void BrowserService::OnPopupRequest(const std::string& url) {
   }
 }
 
-void BrowserService::OnDownloadStarted(
+void BrowserService::OnDownloadRequested(
+    DownloadRequestId id,
     CefRefPtr<CefBeforeDownloadCallback> callback,
-    const std::string& suggested_name) {
-  DiagnosticLog("BrowserService::OnDownloadStarted suggested_name=[" +
-                suggested_name + "] has_dir=" +
-                std::string(download_dir_.empty() ? "false" : "true"));
+    const std::string& suggested_name,
+    const std::string& source_url) {
+  DiagnosticLog("BrowserService::OnDownloadRequested id=" +
+                std::to_string(id) + " suggested_name=[" + suggested_name +
+                "] source_url=[" + source_url + "] has_dir=" +
+                (download_dir_.empty() ? "false" : "true"));
+  if (!callback) {
+    DiagnosticLog("BrowserService::OnDownloadRequested rejected id=" +
+                  std::to_string(id) + ": no callback");
+    return;
+  }
+
   std::wstring download_path;
   if (!download_dir_.empty()) {
     download_path =
         download_dir_ + L"\\" + CefString(suggested_name).ToWString();
   }
-  if (callback) {
+
+  if (download_decision_mode_ == DownloadDecisionMode::kAutomatic) {
     callback->Continue(download_path, false);
+    OnDownloadStateChanged(
+        0, suggested_name, CefString(download_path).ToString());
+    return;
   }
-  OnDownloadStateChanged(0, suggested_name, CefString(download_path).ToString());
+
+  const bool added = pending_downloads_.Add(
+      id, [this, callback, suggested_name](const std::wstring& full_path) {
+        callback->Continue(full_path, false);
+        OnDownloadStateChanged(
+            0, suggested_name, CefString(full_path).ToString());
+      });
+  if (!added) {
+    DiagnosticLog("BrowserService::OnDownloadRequested rejected duplicate id=" +
+                  std::to_string(id));
+    return;
+  }
+  if (!download_request_callback_) {
+    pending_downloads_.Reject(id);
+    DiagnosticLog("BrowserService::OnDownloadRequested rejected id=" +
+                  std::to_string(id) + ": no request callback");
+    return;
+  }
+  download_request_callback_(id, suggested_name, source_url);
 }
 
 void BrowserService::OnDownloadStateChanged(int state,

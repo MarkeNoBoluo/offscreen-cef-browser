@@ -11,6 +11,7 @@
 #include "browser/browser_close_state.h"
 #include "browser/browser_geometry.h"
 #include "browser/browser_paint_geometry.h"
+#include "browser/download_request_registry.h"
 #include "browser/osr_render_handler.h"
 #include "include/cef_browser.h"
 #include "include/cef_download_handler.h"
@@ -40,6 +41,10 @@ class BrowserService final : public BrowserClient::Delegate {
   using LoadErrorCallback =
       std::function<void(int error_code, const std::string& failed_url,
                          const std::string& error_text)>;
+  using DownloadRequestCallback =
+      std::function<void(DownloadRequestId id,
+                         const std::string& suggested_name,
+                         const std::string& source_url)>;
   using DownloadStateChangeCallback =
       std::function<void(int state, const std::string& file_name,
                          const std::string& full_path)>;
@@ -99,6 +104,14 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 设置下载状态变化回调。
   /// @param callback 接收状态、文件名和完整路径的回调。
   void SetDownloadStateChangeCallback(DownloadStateChangeCallback callback);
+  /// 设置下载决策模式；离开宿主确认模式时取消全部待决请求。
+  void SetDownloadDecisionMode(DownloadDecisionMode mode);
+  /// 设置宿主下载请求通知回调。
+  void SetDownloadRequestCallback(DownloadRequestCallback callback);
+  /// 接受待决下载；空路径等同取消。
+  bool AcceptDownload(DownloadRequestId id, const std::wstring& full_path);
+  /// 取消待决下载。
+  bool CancelDownload(DownloadRequestId id);
   /// 设置页面未拦截右键时的菜单请求回调。
   /// @param callback 接收触发点视图内逻辑坐标的回调。
   void SetContextMenuRequestedCallback(
@@ -334,11 +347,12 @@ class BrowserService final : public BrowserClient::Delegate {
   /// 将 CEF 弹出窗口请求交给宿主创建新标签。
   /// @param url 弹出目标的 UTF-8 地址。
   void OnPopupRequest(const std::string& url) override;
-  /// 响应 CEF 开始下载请求并保存到下载目录。
-  /// @param callback CEF 下载继续回调。
-  /// @param suggested_name 建议的 UTF-8 文件名。
-  void OnDownloadStarted(CefRefPtr<CefBeforeDownloadCallback> callback,
-                         const std::string& suggested_name) override;
+  /// 根据当前决策模式立即继续或暂存 CEF 下载回调。
+  void OnDownloadRequested(
+      DownloadRequestId id,
+      CefRefPtr<CefBeforeDownloadCallback> callback,
+      const std::string& suggested_name,
+      const std::string& source_url) override;
   /// 转发下载状态变化。
   /// @param state 下载状态：0 开始、1 完成、2 取消。
   /// @param file_name UTF-8 文件名。
@@ -375,6 +389,10 @@ class BrowserService final : public BrowserClient::Delegate {
   LoadStateChangeCallback load_state_change_callback_;
   LoadErrorCallback load_error_callback_;
   DownloadStateChangeCallback download_state_change_callback_;
+  DownloadDecisionMode download_decision_mode_ =
+      DownloadDecisionMode::kAutomatic;
+  DownloadRequestCallback download_request_callback_;
+  DownloadRequestRegistry pending_downloads_;
   ContextMenuRequestedCallback context_menu_requested_callback_;
   std::wstring download_dir_;
   std::string address_;
