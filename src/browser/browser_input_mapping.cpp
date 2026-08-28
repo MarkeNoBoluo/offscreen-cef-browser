@@ -18,8 +18,6 @@ constexpr int kQtLeftButton = 0x00000001;
 constexpr int kQtRightButton = 0x00000002;
 constexpr int kQtMiddleButton = 0x00000004;
 
-constexpr int kQtMouseEventNotSynthesized = 0;
-
 constexpr uint32_t kWindowsKeyRepeatCount = 1;
 constexpr uint32_t kWindowsKeyScanCodeShift = 16;
 constexpr uint32_t kWindowsKeyExtendedFlag = 1u << 24;
@@ -73,10 +71,6 @@ uint32_t MouseButtonsToCefEventFlags(int qt_mouse_buttons) {
     flags |= kEventFlagMiddleButton;
   }
   return flags;
-}
-
-bool ShouldForwardQtMouseEvent(int qt_mouse_event_source) {
-  return qt_mouse_event_source == kQtMouseEventNotSynthesized;
 }
 
 bool IsWindowsKeyDown(int windows_key_code) {

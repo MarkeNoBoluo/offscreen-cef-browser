@@ -124,10 +124,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\build.ps1" `
 
 宿主程序通过 `offscreen_cef::widgets` 链接组件，并调用 `offscreen_cef_deploy(host_app)` 部署 CEF runtime、resources 和 `offscreen_cef_subprocess.exe`。完整示例见 [docs/embedding.md](docs/embedding.md)。
 
-### 宿主控制下载确认
-
-`CefWebView` 和 `CefTabbedBrowser` 默认使用兼容现有行为的 `DownloadDecisionMode::kAutomatic`。需要由宿主确认保存位置时，先连接 `downloadRequested`，再切换为 `DownloadDecisionMode::kAskHost`，并对每个请求在异步回调中调用来源 WebView 的 `AcceptDownload()` 或 `CancelDownload()`。WebView 和多标签页的可复制示例、路径要求和生命周期注意事项见 [docs/embedding.md 的宿主控制下载确认章节](docs/embedding.md#宿主控制下载确认)。
-
 ### 启动链路
 
 `CefRuntime::ExecuteSubprocess` → `QApplication` → `CefRuntime::Initialize` (external message pump) → `CefBrowserHost::CreateBrowser` (Alloy style, `SetAsWindowless`) → `QApplication::exec()` → 所有 browser 关闭 → `CefRuntime::Shutdown`

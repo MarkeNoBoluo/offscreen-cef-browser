@@ -51,10 +51,6 @@ add_library(offscreen_core STATIC
   src/browser/browser_ime_core.h
   src/browser/browser_paint_geometry.cpp
   src/browser/browser_paint_geometry.h
-  src/browser/download_request_registry.cpp
-  src/browser/download_request_registry.h
-  src/browser/browser_touch_gesture.cpp
-  src/browser/browser_touch_gesture.h
   src/browser/gpu_frame_state.cpp
   src/browser/gpu_frame_state.h
   src/browser/osr_render_log.cpp
@@ -73,7 +69,6 @@ add_library(offscreen_core STATIC
   src/utils_log/LogStream.h
   src/utils_log/TTime.h
   src/utils_log/NoCopyable.h
-  src/offscreen_cef/download_types.h
 )
 target_include_directories(offscreen_core PUBLIC src)
 target_compile_features(offscreen_core PUBLIC cxx_std_17)

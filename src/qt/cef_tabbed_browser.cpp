@@ -26,8 +26,6 @@ CefTabbedBrowser::~CefTabbedBrowser() = default;
 
 CefWebView* CefTabbedBrowser::OpenTab(const QUrl& url, bool activate) {
   auto* view = new CefWebView(tabs_);
-  view->SetDownloadDirectory(download_directory_);
-  view->SetDownloadDecisionMode(download_decision_mode_);
   const int index = tabs_->addTab(view, QStringLiteral("Loading..."));
   connect(view, &CefWebView::titleChanged, this, [this, view](const QString& title) {
     const int tab_index = tabs_->indexOf(view);
@@ -63,15 +61,9 @@ CefWebView* CefTabbedBrowser::OpenTab(const QUrl& url, bool activate) {
               emit currentLoadError(errorCode, failedUrl, errorText);
             }
           });
-  connect(view, &CefWebView::downloadRequested, this,
-          [this, view](DownloadRequestId id, const QString& suggested_name,
-                       const QUrl& source_url) {
-            emit downloadRequested(view, id, suggested_name, source_url);
-          });
   connect(view, &CefWebView::downloadStateChanged, this,
           [this, view](int state, const QString& fileName,
                        const QString& fullPath) {
-            emit downloadStateChanged(view, state, fileName, fullPath);
             if (tabs_->currentWidget() == view) {
               emit currentDownloadStateChanged(state, fileName, fullPath);
             }
@@ -102,24 +94,6 @@ CefWebView* CefTabbedBrowser::CurrentView() const {
 
 int CefTabbedBrowser::tabCount() const {
   return tabs_->count();
-}
-
-void CefTabbedBrowser::SetDownloadDirectory(const QString& path) {
-  download_directory_ = path;
-  for (int index = 0; index < tabs_->count(); ++index) {
-    if (auto* view = qobject_cast<CefWebView*>(tabs_->widget(index))) {
-      view->SetDownloadDirectory(download_directory_);
-    }
-  }
-}
-
-void CefTabbedBrowser::SetDownloadDecisionMode(DownloadDecisionMode mode) {
-  download_decision_mode_ = mode;
-  for (int index = 0; index < tabs_->count(); ++index) {
-    if (auto* view = qobject_cast<CefWebView*>(tabs_->widget(index))) {
-      view->SetDownloadDecisionMode(download_decision_mode_);
-    }
-  }
 }
 
 void CefTabbedBrowser::CloseTab(int index) {

@@ -1,11 +1,8 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDebug>
-#include <QDialog>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QMainWindow>
-#include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
 
@@ -29,26 +26,6 @@ class WebViewDemoWindow final : public QMainWindow {
 
     view_ = new offscreen::CefWebView(this);
     setCentralWidget(view_);
-    connect(view_, &offscreen::CefWebView::downloadRequested, view_,
-            [view = view_](offscreen::DownloadRequestId id,
-                           const QString& suggested_name, const QUrl&) {
-              auto* dialog = new QFileDialog(view);
-              dialog->setAcceptMode(QFileDialog::AcceptSave);
-              dialog->setFileMode(QFileDialog::AnyFile);
-              dialog->setDirectory(QStandardPaths::writableLocation(
-                  QStandardPaths::DownloadLocation));
-              dialog->selectFile(suggested_name);
-              dialog->setAttribute(Qt::WA_DeleteOnClose);
-              connect(dialog, &QFileDialog::fileSelected, view,
-                      [view, id](const QString& path) {
-                        view->AcceptDownload(id, path);
-                      });
-              connect(dialog, &QDialog::rejected, view,
-                      [view, id]() { view->CancelDownload(id); });
-              dialog->open();
-            });
-    view_->SetDownloadDecisionMode(
-        offscreen::DownloadDecisionMode::kAskHost);
     connect(view_, &offscreen::CefWebView::titleChanged, this,
             [this](const QString& title) {
               setWindowTitle(title.isEmpty()
@@ -98,21 +75,22 @@ int main(int argc, char* argv[]) {
     return *exit_code;
   }
 
-  QUrl initial_url(QStringLiteral("https://example.com/"));
-  if (argc > 2) {
-    return 2;
-  }
-  if (argc == 2) {
-    const QFileInfo html_file(QString::fromLocal8Bit(argv[1]));
-    const QString suffix = html_file.suffix().toLower();
+  QApplication app(argc, argv);
+  QUrl initial_url(QStringLiteral("http://192.168.42.116"));
+  if (app.arguments().size() > 1) {
+    const QFileInfo html_file(app.arguments().at(1));
+    const QString suffix = html_file.suffix();
     if (!html_file.exists() || !html_file.isFile() ||
-        (suffix != QStringLiteral("html") && suffix != QStringLiteral("htm"))) {
+        (suffix.compare(QStringLiteral("html"), Qt::CaseInsensitive) != 0 &&
+         suffix.compare(QStringLiteral("htm"), Qt::CaseInsensitive) != 0)) {
+      qCritical().noquote()
+          << QStringLiteral("Local HTML file not found or invalid: %1")
+                 .arg(html_file.filePath());
       return 2;
     }
     initial_url = QUrl::fromLocalFile(html_file.absoluteFilePath());
   }
 
-  QApplication app(argc, argv);
   offscreen::CefRuntime runtime;
   if (!runtime.Initialize()) {
     return 1;

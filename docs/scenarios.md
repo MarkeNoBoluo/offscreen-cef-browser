@@ -121,13 +121,6 @@ return runtime.Shutdown() ? result : 1;
 跨线程收到 URL 指令时，用 `Qt::QueuedConnection` 投递到 `CefWebView::LoadUrl()`；
 不要从工作线程直接调用 CEF 或 QWidget。
 
-### 场景二附加：宿主确认下载
-
-需要让用户选择保存位置时，先连接 `CefWebView::downloadRequested`，再设置
-`DownloadDecisionMode::kAskHost`。在回调中使用异步 `QFileDialog::open()`，并将
-`fileSelected` 的绝对完整文件名传给 `AcceptDownload()`；取消时调用
-`CancelDownload()`。完整的最小代码见 [embedding.md 的宿主控制下载确认章节](embedding.md#宿主控制下载确认)。
-
 ## 场景三：Tabbed Browser 快速嵌入
 
 `CefTabbedBrowser` 是轻量多标签页容器。它内部创建多个 `CefWebView`，并把页面

@@ -1,11 +1,9 @@
 #pragma once
 
 #include <QPoint>
-#include <QString>
 #include <QWidget>
 
 #include "browser/render_stats.h"
-#include "offscreen_cef/download_types.h"
 
 class QTabWidget;
 class QUrl;
@@ -59,8 +57,6 @@ class CefTabbedBrowser final : public QWidget {
   void Paste();
   /// 全选当前网页文本。
   void SelectAll();
-  void SetDownloadDirectory(const QString& path);
-  void SetDownloadDecisionMode(DownloadDecisionMode mode);
 
  signals:
   /// 当前标签地址变化时发射。
@@ -87,14 +83,6 @@ class CefTabbedBrowser final : public QWidget {
   /// @param fullPath 完整保存路径。
   void currentDownloadStateChanged(int state, const QString& fileName,
                                    const QString& fullPath);
-  void downloadRequested(CefWebView* view,
-                         DownloadRequestId id,
-                         const QString& suggestedFileName,
-                         const QUrl& sourceUrl);
-  void downloadStateChanged(CefWebView* view,
-                            int state,
-                            const QString& fileName,
-                            const QString& fullPath);
   /// 当前网页请求右键菜单时发射。
   /// @param globalPos 菜单出现的全局坐标。
   void currentContextMenuRequested(const QPoint& globalPos);
@@ -118,9 +106,6 @@ class CefTabbedBrowser final : public QWidget {
   void UpdateCurrentState(int index);
 
   QTabWidget* tabs_ = nullptr;
-  QString download_directory_;
-  DownloadDecisionMode download_decision_mode_ =
-      DownloadDecisionMode::kAutomatic;
   bool close_requested_ = false;
 };
 

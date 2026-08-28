@@ -10,7 +10,6 @@
 #include <windows.h>
 
 #include "browser/render_stats.h"
-#include "offscreen_cef/download_types.h"
 
 namespace offscreen {
 
@@ -77,9 +76,6 @@ class CefWebView final : public QWidget {
   /// 设置下载保存目录。
   /// @param path 下载目录路径。
   void SetDownloadDirectory(const QString& path);
-  void SetDownloadDecisionMode(DownloadDecisionMode mode);
-  void AcceptDownload(DownloadRequestId id, const QString& fullPath);
-  void CancelDownload(DownloadRequestId id);
   /// 异步请求关闭 CEF 浏览器。
   void CloseBrowser();
 
@@ -110,9 +106,6 @@ class CefWebView final : public QWidget {
   /// @param fullPath 完整保存路径。
   void downloadStateChanged(int state, const QString& fileName,
                             const QString& fullPath);
-  void downloadRequested(DownloadRequestId id,
-                         const QString& suggestedFileName,
-                         const QUrl& sourceUrl);
   /// 用户请求右键菜单时发射。
   /// @param globalPos 菜单出现的全局坐标。
   void contextMenuRequested(const QPoint& globalPos);

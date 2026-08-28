@@ -11,7 +11,6 @@
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_request_handler.h"
-#include "offscreen_cef/download_types.h"
 
 namespace offscreen {
 
@@ -60,16 +59,12 @@ class BrowserClient final : public CefClient,
     virtual void OnLoadError(int error_code,
                              const std::string& failed_url,
                              const std::string& error_text) = 0;
-    /// 接收待宿主决策的下载请求。
-    /// @param id CEF 下载请求标识。
+    /// 接收开始下载请求。
     /// @param callback 下载继续回调。
     /// @param suggested_name 建议的 UTF-8 文件名。
-    /// @param source_url 下载源地址。
-    virtual void OnDownloadRequested(
-        DownloadRequestId id,
+    virtual void OnDownloadStarted(
         CefRefPtr<CefBeforeDownloadCallback> callback,
-        const std::string& suggested_name,
-        const std::string& source_url) = 0;
+        const std::string& suggested_name) = 0;
     /// 接收下载状态变化。
     /// @param state 下载状态：0 开始、1 完成、2 取消。
     /// @param file_name UTF-8 文件名。

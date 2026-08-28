@@ -3,8 +3,6 @@
 #include <utility>
 
 #include <QCloseEvent>
-#include <QDir>
-#include <QFileInfo>
 #include <QMetaObject>
 #include <QShowEvent>
 #include <QTimer>
@@ -108,14 +106,6 @@ CefWebView::CefWebView(QWidget* parent) : QWidget(parent) {
                               static_cast<int>(file_name.size())),
             QString::fromUtf8(full_path.data(),
                               static_cast<int>(full_path.size())));
-      });
-  browser_service_->SetDownloadRequestCallback(
-      [this](DownloadRequestId id, const std::string& suggested_name,
-             const std::string& source_url) {
-        emit downloadRequested(
-            id, QString::fromUtf8(suggested_name.data(),
-                                  static_cast<int>(suggested_name.size())),
-            Utf8ToUrl(source_url));
       });
   browser_service_->SetContextMenuRequestedCallback(
       [this](int view_x, int view_y) {
@@ -243,29 +233,6 @@ void CefWebView::SelectAll() {
 void CefWebView::SetDownloadDirectory(const QString& path) {
   if (browser_service_) {
     browser_service_->SetDownloadDirectory(path.toStdWString());
-  }
-}
-
-void CefWebView::SetDownloadDecisionMode(DownloadDecisionMode mode) {
-  if (browser_service_) {
-    browser_service_->SetDownloadDecisionMode(mode);
-  }
-}
-
-void CefWebView::AcceptDownload(DownloadRequestId id, const QString& fullPath) {
-  const QString native_path = QDir::toNativeSeparators(fullPath);
-  if (!browser_service_ || native_path.isEmpty() ||
-      !QFileInfo(native_path).isAbsolute() ||
-      QFileInfo(native_path).fileName().isEmpty()) {
-    CancelDownload(id);
-    return;
-  }
-  browser_service_->AcceptDownload(id, native_path.toStdWString());
-}
-
-void CefWebView::CancelDownload(DownloadRequestId id) {
-  if (browser_service_) {
-    browser_service_->CancelDownload(id);
   }
 }
 

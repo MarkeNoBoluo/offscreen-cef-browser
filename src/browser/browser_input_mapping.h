@@ -38,10 +38,6 @@ int MapQtMouseButtonToCefMouseButton(int qt_mouse_button);
 /// @param qt_mouse_buttons Qt::MouseButtons 的整数值。
 /// @return 包含鼠标按钮的 CEF 标志。
 uint32_t MouseButtonsToCefEventFlags(int qt_mouse_buttons);
-/// 判断 Qt 鼠标事件是否应作为真实鼠标输入转发给 CEF。
-/// @param qt_mouse_event_source Qt::MouseEventSource 的整数值。
-/// @return 非合成鼠标事件返回 true。
-bool ShouldForwardQtMouseEvent(int qt_mouse_event_source);
 /// 从 Win32 键盘消息构造 CEF 修饰键标志。
 /// @param w_param Win32 键盘消息的 wParam。
 /// @param l_param Win32 键盘消息的 lParam。

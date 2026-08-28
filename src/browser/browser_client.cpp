@@ -157,17 +157,12 @@ void BrowserClient::OnBeforeDownload(
     CefRefPtr<CefDownloadItem> download_item,
     const CefString& suggested_name,
     CefRefPtr<CefBeforeDownloadCallback> callback) {
+  (void)download_item;
   DiagnosticLog("BrowserClient::OnBeforeDownload browser_id=" +
                 std::to_string(browser ? browser->GetIdentifier() : -1) +
                 " suggested_name=[" + CefStringToUtf8(suggested_name) + "]");
-  if (!download_item || !download_item->IsValid() || !callback) {
-    DiagnosticLog("BrowserClient::OnBeforeDownload ignored invalid item/callback");
-    return;
-  }
   if (delegate_) {
-    delegate_->OnDownloadRequested(
-        download_item->GetId(), callback, CefStringToUtf8(suggested_name),
-        CefStringToUtf8(download_item->GetOriginalUrl()));
+    delegate_->OnDownloadStarted(callback, CefStringToUtf8(suggested_name));
   }
 }
 

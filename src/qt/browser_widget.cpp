@@ -20,7 +20,6 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QCoreApplication>
-#include <QDateTime>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -38,7 +37,6 @@
 #include <QScreen>
 #include <QThread>
 #include <QTimer>
-#include <QTouchEvent>
 #include <QUrl>
 #include <QWindow>
 #include <QWheelEvent>
@@ -79,23 +77,6 @@ constexpr int kCursorZoomOut = 40;           // CT_ZOOMOUT
 constexpr int kCursorGrab = 41;              // CT_GRAB
 constexpr int kCursorGrabbing = 42;          // CT_GRABBING
 
-int CefTouchType(QEventPoint::State state) {
-  switch (state) {
-    case QEventPoint::State::Pressed:
-      return CEF_TET_PRESSED;
-    case QEventPoint::State::Updated:
-      return CEF_TET_MOVED;
-    case QEventPoint::State::Released:
-      return CEF_TET_RELEASED;
-    default:
-      return -1;
-  }
-}
-
-int64_t CurrentContextMenuTimestampMs() {
-  return static_cast<int64_t>(QDateTime::currentMSecsSinceEpoch());
-}
-
 CefRenderHandler::DragOperation PreferredDragOperation(
     CefRenderHandler::DragOperationsMask allowed_ops) {
   if (allowed_ops & DRAG_OPERATION_COPY) return DRAG_OPERATION_COPY;
@@ -104,18 +85,6 @@ CefRenderHandler::DragOperation PreferredDragOperation(
   if (allowed_ops & DRAG_OPERATION_GENERIC) return DRAG_OPERATION_GENERIC;
   if (allowed_ops & DRAG_OPERATION_PRIVATE) return DRAG_OPERATION_PRIVATE;
   return DRAG_OPERATION_NONE;
-}
-
-bool IgnoreSyntheticMouseEvent(const char* handler, QMouseEvent* event) {
-  if (ShouldForwardQtMouseEvent(static_cast<int>(event->source()))) {
-    return false;
-  }
-
-  DiagnosticLog(std::string("BrowserWidget::") + handler +
-                " ignored synthesized mouse source=" +
-                std::to_string(static_cast<int>(event->source())));
-  event->accept();
-  return true;
 }
 
 }  // namespace
@@ -188,7 +157,6 @@ BrowserWidget::BrowserWidget(QWidget* parent)
   setAttribute(Qt::WA_NativeWindow, true);
   setAttribute(Qt::WA_DontCreateNativeAncestors, false);
   setAttribute(Qt::WA_InputMethodEnabled, true);
-  setAttribute(Qt::WA_AcceptTouchEvents, true);
   setAcceptDrops(true);
   setFocusPolicy(Qt::StrongFocus);
   setMouseTracking(true);
@@ -201,7 +169,6 @@ BrowserWidget::BrowserWidget(QWidget* parent)
 }
 
 BrowserWidget::~BrowserWidget() {
-  CancelTouchSequence();
   if (gpu_frame_bridge_) {
     gpu_frame_bridge_->SetInteropAvailable(false);
   }
@@ -284,7 +251,6 @@ void BrowserWidget::SetResizeCallback(ResizeCallback resize_callback) {
 
 void BrowserWidget::SetBrowserService(BrowserService* service) {
   if (browser_service_ && browser_service_ != service) {
-    CancelTouchSequence();
     CancelCefDragging();
     browser_service_->SetStartDraggingCallback({});
     browser_service_->SetUpdateDragCursorCallback({});
@@ -512,76 +478,6 @@ void BrowserWidget::CancelCefDragging() {
   cef_drag_allowed_ops_ = DRAG_OPERATION_NONE;
   cef_drag_current_op_ = DRAG_OPERATION_NONE;
   setCursor(Qt::ArrowCursor);
-}
-
-std::vector<TouchPointSnapshot> BrowserWidget::TouchSnapshots(
-    const QTouchEvent* event) const {
-  std::vector<TouchPointSnapshot> snapshots;
-  snapshots.reserve(event->points().size());
-  for (const QEventPoint& point : event->points()) {
-    const QPointF position = point.position();
-    snapshots.push_back({point.id(), position.x(), position.y(),
-                         point.state() != QEventPoint::State::Released});
-  }
-  return snapshots;
-}
-
-void BrowserWidget::BeginTouchDragging(const QPoint& position) {
-  if (!browser_service_) return;
-
-  CancelTouchDragging();
-  touch_drag_data_ = CefDragData::Create();
-  if (!touch_drag_data_) return;
-  browser_service_->SendDragTargetDragEnter(
-      touch_drag_data_, position.x(), position.y(), 0, 0);
-  touch_drag_active_ = true;
-}
-
-void BrowserWidget::UpdateTouchDragging(const QPoint& position) {
-  if (!browser_service_ || !touch_drag_active_) return;
-  browser_service_->SendDragTargetDragOver(position.x(), position.y(), 0, 0);
-}
-
-void BrowserWidget::EndTouchDragging(const QPoint& position) {
-  if (browser_service_ && touch_drag_active_) {
-    browser_service_->SendDragTargetDrop(position.x(), position.y(), 0, 0);
-  }
-  touch_drag_active_ = false;
-  touch_drag_data_ = nullptr;
-}
-
-void BrowserWidget::CancelTouchDragging() {
-  if (browser_service_ && touch_drag_active_) {
-    browser_service_->SendDragTargetDragLeave();
-  }
-  touch_drag_active_ = false;
-  touch_drag_data_ = nullptr;
-}
-
-void BrowserWidget::SuppressCefTouchSequence(bool cancel_gesture) {
-  if (touch_forwarding_suppressed_) return;
-  if (browser_service_) {
-    for (const auto& [id, point] : active_touch_points_) {
-      browser_service_->SendTouchEvent(
-          id, static_cast<float>(point.x), static_cast<float>(point.y),
-          CEF_TET_CANCELLED, 0, 0.0f, 0.0f, 0.0f);
-    }
-  }
-  touch_forwarding_suppressed_ = true;
-  if (cancel_gesture) {
-    touch_gesture_.Cancel();
-  }
-}
-
-void BrowserWidget::CancelTouchSequence() {
-  touch_context_menu_suppressor_.CancelSequence(
-      CurrentContextMenuTimestampMs());
-  CancelTouchDragging();
-  SuppressCefTouchSequence();
-  active_touch_points_.clear();
-  touch_sequence_primary_id_ = -1;
-  touch_forwarding_suppressed_ = false;
-  touch_gesture_.Cancel();
 }
 
 void BrowserWidget::OnImeCompositionRangeChanged(
@@ -941,10 +837,6 @@ void BrowserWidget::paintGL() {
 }
 
 void BrowserWidget::mousePressEvent(QMouseEvent* event) {
-  if (IgnoreSyntheticMouseEvent("mousePressEvent", event)) {
-    return;
-  }
-
   last_mouse_pos_ = event->pos();
   if (browser_service_) {
     browser_service_->SendMouseClickEvent(
@@ -956,10 +848,6 @@ void BrowserWidget::mousePressEvent(QMouseEvent* event) {
 }
 
 void BrowserWidget::mouseReleaseEvent(QMouseEvent* event) {
-  if (IgnoreSyntheticMouseEvent("mouseReleaseEvent", event)) {
-    return;
-  }
-
   last_mouse_pos_ = event->pos();
   if (cef_drag_source_active_) {
     FinishCefDragging(event->pos(), static_cast<int>(event->buttons()),
@@ -978,10 +866,6 @@ void BrowserWidget::mouseReleaseEvent(QMouseEvent* event) {
 }
 
 void BrowserWidget::mouseMoveEvent(QMouseEvent* event) {
-  if (IgnoreSyntheticMouseEvent("mouseMoveEvent", event)) {
-    return;
-  }
-
   last_mouse_pos_ = event->pos();
   if (cef_drag_source_active_) {
     if (rect().contains(event->pos())) {
@@ -1011,10 +895,6 @@ void BrowserWidget::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void BrowserWidget::mouseDoubleClickEvent(QMouseEvent* event) {
-  if (IgnoreSyntheticMouseEvent("mouseDoubleClickEvent", event)) {
-    return;
-  }
-
   if (browser_service_) {
     browser_service_->SendMouseClickEvent(
         event->pos().x(), event->pos().y(),
@@ -1048,14 +928,6 @@ void BrowserWidget::wheelEvent(QWheelEvent* event) {
 }
 
 void BrowserWidget::contextMenuEvent(QContextMenuEvent* event) {
-  if (touch_context_menu_suppressor_.ShouldSuppress(
-          CurrentContextMenuTimestampMs())) {
-    last_context_menu_pos_ = QPoint();
-    DiagnosticLog("BrowserWidget::contextMenuEvent suppressed touch menu");
-    event->accept();
-    return;
-  }
-
   // 不再无条件弹菜单；宿主菜单改由 CEF OnBeforeContextMenu 驱动，
   // 避免与网页自定义右键菜单重叠。
   last_context_menu_pos_ = event->globalPos();
@@ -1063,13 +935,6 @@ void BrowserWidget::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void BrowserWidget::RequestContextMenu(int view_x, int view_y) {
-  if (touch_context_menu_suppressor_.ShouldSuppress(
-          CurrentContextMenuTimestampMs())) {
-    last_context_menu_pos_ = QPoint();
-    DiagnosticLog("BrowserWidget::RequestContextMenu suppressed touch menu");
-    return;
-  }
-
   // Windows 上 contextMenuEvent（右键抬起）先于 OnBeforeContextMenu 触发，
   // 记录的全局坐标精确无缩放歧义；CEF 视图坐标作回退。
   const QPoint global_pos = last_context_menu_pos_.isNull()
@@ -1182,7 +1047,6 @@ void BrowserWidget::focusOutEvent(QFocusEvent* event) {
   QWidget::focusOutEvent(event);
   DiagnosticLog("BrowserWidget::focusOutEvent composing=" +
                 std::string(is_composing_ ? "true" : "false"));
-  CancelTouchSequence();
   CancelCefDragging();
   if (browser_service_) {
     browser_service_->SetBrowserFocus(false);
@@ -1195,177 +1059,6 @@ void BrowserWidget::focusOutEvent(QFocusEvent* event) {
       browser_service_->ImeCancelComposition();
     }
   }
-}
-
-bool BrowserWidget::event(QEvent* event) {
-  if (event && (event->type() == QEvent::TouchBegin ||
-                event->type() == QEvent::TouchUpdate ||
-                event->type() == QEvent::TouchEnd ||
-                event->type() == QEvent::TouchCancel)) {
-    touchEvent(static_cast<QTouchEvent*>(event));
-    return true;
-  }
-  return QOpenGLWidget::event(event);
-}
-
-void BrowserWidget::touchEvent(QTouchEvent* event) {
-  if (!event) return;
-
-  if (!browser_service_) {
-    CancelTouchSequence();
-    event->accept();
-    return;
-  }
-
-  if (event->type() == QEvent::TouchCancel) {
-    const std::vector<TouchPointSnapshot> snapshots = TouchSnapshots(event);
-    for (const TouchPointSnapshot& snapshot : snapshots) {
-      const auto active = active_touch_points_.find(snapshot.id);
-      if (active != active_touch_points_.end()) {
-        active->second = snapshot;
-      }
-    }
-    CancelTouchSequence();
-    event->accept();
-    return;
-  }
-
-  const auto& points = event->points();
-  if (points.empty()) {
-    CancelTouchSequence();
-    event->accept();
-    return;
-  }
-
-  const std::vector<TouchPointSnapshot> snapshots = TouchSnapshots(event);
-  const int64_t context_menu_timestamp_ms = CurrentContextMenuTimestampMs();
-  std::vector<int> released_ids;
-  released_ids.reserve(points.size());
-
-  bool invalid_points = false;
-  for (size_t index = 0; index < points.size(); ++index) {
-    const QEventPoint& point = points.at(index);
-    const QPointF position = point.position();
-    if (point.id() < 0 || !std::isfinite(position.x()) ||
-        !std::isfinite(position.y())) {
-      invalid_points = true;
-      break;
-    }
-
-    const QEventPoint::State state = point.state();
-    if (state != QEventPoint::State::Stationary &&
-        CefTouchType(state) < 0) {
-      invalid_points = true;
-      break;
-    }
-  }
-
-  if (invalid_points) {
-    CancelTouchSequence();
-    event->accept();
-    return;
-  }
-
-  for (size_t index = 0; index < points.size(); ++index) {
-    const QEventPoint& point = points.at(index);
-    const QEventPoint::State state = point.state();
-    const TouchPointSnapshot& snapshot = snapshots.at(index);
-    const bool was_active =
-        active_touch_points_.find(point.id()) != active_touch_points_.end();
-
-    if (state == QEventPoint::State::Released) {
-      if (was_active) {
-        released_ids.push_back(point.id());
-      }
-    } else {
-      if (active_touch_points_.empty() &&
-          state == QEventPoint::State::Pressed) {
-        touch_sequence_primary_id_ = point.id();
-        touch_context_menu_suppressor_.BeginSequence(
-            context_menu_timestamp_ms);
-      }
-      active_touch_points_[point.id()] = snapshot;
-    }
-  }
-
-  if (!touch_forwarding_suppressed_ || touch_drag_active_) {
-    const TouchGestureAction action = touch_gesture_.Update(
-        snapshots, static_cast<int64_t>(event->timestamp()));
-    if (ShouldMarkContextMenuHandledForGestureAction(action)) {
-      touch_context_menu_suppressor_.MarkGestureHandled(
-          context_menu_timestamp_ms);
-    }
-    const bool suppress_touch_stream =
-        ShouldSuppressCefTouchSequenceForGestureAction(action);
-    switch (action) {
-      case TouchGestureAction::kBack:
-        browser_service_->GoBack();
-        if (suppress_touch_stream) {
-          SuppressCefTouchSequence();
-        }
-        DiagnosticLog("BrowserWidget::touchEvent gesture=back");
-        break;
-      case TouchGestureAction::kForward:
-        browser_service_->GoForward();
-        if (suppress_touch_stream) {
-          SuppressCefTouchSequence();
-        }
-        DiagnosticLog("BrowserWidget::touchEvent gesture=forward");
-        break;
-      case TouchGestureAction::kBeginDrag:
-        DiagnosticLog(
-            "BrowserWidget::touchEvent gesture=begin_drag preserve_touch");
-        break;
-      case TouchGestureAction::kUpdateDrag:
-        break;
-      case TouchGestureAction::kEndDrag:
-        DiagnosticLog(
-            "BrowserWidget::touchEvent gesture=end_drag preserve_touch");
-        break;
-      case TouchGestureAction::kCancel:
-        CancelTouchDragging();
-        if (suppress_touch_stream) {
-          SuppressCefTouchSequence();
-        }
-        DiagnosticLog("BrowserWidget::touchEvent gesture=cancel");
-        break;
-      case TouchGestureAction::kNone:
-        break;
-    }
-  }
-
-  if (!touch_forwarding_suppressed_) {
-    for (const QEventPoint& point : points) {
-      const QEventPoint::State state = point.state();
-      if (state == QEventPoint::State::Stationary ||
-          (state == QEventPoint::State::Released &&
-           active_touch_points_.find(point.id()) ==
-               active_touch_points_.end())) {
-        continue;
-      }
-
-      const QPointF position = point.position();
-      const QSizeF diameters = point.ellipseDiameters();
-      browser_service_->SendTouchEvent(
-          point.id(), static_cast<float>(position.x()),
-          static_cast<float>(position.y()), CefTouchType(state),
-          static_cast<int>(event->modifiers()),
-          static_cast<float>(std::max<qreal>(0.0, diameters.width() / 2.0)),
-          static_cast<float>(std::max<qreal>(0.0, diameters.height() / 2.0)),
-          static_cast<float>(std::max<qreal>(0.0, point.pressure())));
-    }
-  }
-
-  for (const int id : released_ids) {
-    active_touch_points_.erase(id);
-  }
-  if (active_touch_points_.empty()) {
-    touch_context_menu_suppressor_.EndSequence(context_menu_timestamp_ms);
-    touch_sequence_primary_id_ = -1;
-    touch_forwarding_suppressed_ = false;
-    touch_gesture_.Cancel();
-  }
-  event->accept();
 }
 
 void BrowserWidget::dragEnterEvent(QDragEnterEvent* event) {
