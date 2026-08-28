@@ -35,7 +35,6 @@ class WebViewDemoWindow final : public QMainWindow {
               auto* dialog = new QFileDialog(view);
               dialog->setAcceptMode(QFileDialog::AcceptSave);
               dialog->setFileMode(QFileDialog::AnyFile);
-              dialog->setConfirmOverwrite(true);
               dialog->setDirectory(QStandardPaths::writableLocation(
                   QStandardPaths::DownloadLocation));
               dialog->selectFile(suggested_name);
@@ -99,22 +98,21 @@ int main(int argc, char* argv[]) {
     return *exit_code;
   }
 
-  QApplication app(argc, argv);
-  QUrl initial_url(QStringLiteral("http://192.168.42.116"));
-  if (app.arguments().size() > 1) {
-    const QFileInfo html_file(app.arguments().at(1));
-    const QString suffix = html_file.suffix();
+  QUrl initial_url(QStringLiteral("https://example.com/"));
+  if (argc > 2) {
+    return 2;
+  }
+  if (argc == 2) {
+    const QFileInfo html_file(QString::fromLocal8Bit(argv[1]));
+    const QString suffix = html_file.suffix().toLower();
     if (!html_file.exists() || !html_file.isFile() ||
-        (suffix.compare(QStringLiteral("html"), Qt::CaseInsensitive) != 0 &&
-         suffix.compare(QStringLiteral("htm"), Qt::CaseInsensitive) != 0)) {
-      qCritical().noquote()
-          << QStringLiteral("Local HTML file not found or invalid: %1")
-                 .arg(html_file.filePath());
+        (suffix != QStringLiteral("html") && suffix != QStringLiteral("htm"))) {
       return 2;
     }
     initial_url = QUrl::fromLocalFile(html_file.absoluteFilePath());
   }
 
+  QApplication app(argc, argv);
   offscreen::CefRuntime runtime;
   if (!runtime.Initialize()) {
     return 1;
