@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
     return *exit_code;
   }
 
-  QUrl initial_url(QStringLiteral("https://example.com/"));
+  QUrl initial_url(QStringLiteral("http://192.168.42.116:80/shareFiles?attendUserGuid=39d061a4-8eb0-4fef-a433-1c4431dd205e&lang=zh"));
   if (argc > 2) {
     return 2;
   }
